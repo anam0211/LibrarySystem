@@ -22,8 +22,6 @@ public class UserController {
 
     @GetMapping("/me")
     public ResponseEntity<?> getCurrentUser() {
-        // Màng lọc JwtAuthenticationFilter đã kiểm tra Token và lưu thông tin vào SecurityContext
-        // Bây giờ chúng ta chỉ cần lôi nó ra dùng:
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         
         // Lấy ra email của người đang gửi request
@@ -35,14 +33,19 @@ public class UserController {
         return ResponseEntity.ok(message);
     }
 
+    @GetMapping
+    public ResponseEntity<?> getAllUsers() {
+        // Lấy toàn bộ dữ liệu trong bảng users (SELECT * FROM users)
+        return ResponseEntity.ok(userRepository.findAll());
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteUser(@PathVariable Integer id) {
         // 1. Tìm user theo ID
         UserEntity user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng với ID này!"));
 
-        // 2. Xóa mềm: Chuyển trạng thái sang INACTIVE (Khóa tài khoản)
-        // Lưu ý: Đảm bảo enum UserStatus của bạn có giá trị INACTIVE hoặc BANNED
+        // 2. Chuyển trạng thái sang SUSPENDED (Khóa tài khoản)
         user.setStatus(UserStatus.SUSPENDED); 
         userRepository.save(user);
 

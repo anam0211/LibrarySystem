@@ -52,6 +52,7 @@ public class SecurityConfig {
                 .requestMatchers("/", "/index.html", "/css/**", "/js/**").permitAll() // THÊM DÒNG NÀY ĐỂ MỞ CỬA CHO GIAO DIỆN
                 .requestMatchers("/api/auth/**").permitAll() // Mở cửa tự do cho Đăng nhập, Đăng ký
                 .requestMatchers("/api/public/**").permitAll() // Thêm các API công khai (như tra cứu sách) nếu cần
+                .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/users").hasRole("ADMIN")
                 .requestMatchers(org.springframework.http.HttpMethod.DELETE, "/api/users/**").hasRole("ADMIN")
                 .anyRequest().authenticated() // Tất cả các API còn lại đều bắt buộc phải có Token hợp lệ
             )
