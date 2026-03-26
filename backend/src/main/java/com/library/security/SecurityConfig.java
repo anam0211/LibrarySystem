@@ -49,12 +49,17 @@ public class SecurityConfig {
             
             // Cấu hình phân quyền các đường dẫn API
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/", "/index.html", "/css/**", "/js/**").permitAll() // THÊM DÒNG NÀY ĐỂ MỞ CỬA CHO GIAO DIỆN
-                .requestMatchers("/api/auth/**").permitAll() // Mở cửa tự do cho Đăng nhập, Đăng ký
-                .requestMatchers("/api/public/**").permitAll() // Thêm các API công khai (như tra cứu sách) nếu cần
+                .requestMatchers("/", "/*.html", "/css/**", "/js/**", "/error").permitAll()
+                .requestMatchers("/welcome", "/login", "/register", "/dashboard").permitAll()
+
+                .requestMatchers("/api/auth/**", "/api/public/**").permitAll()
+
                 .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/users").hasRole("ADMIN")
                 .requestMatchers(org.springframework.http.HttpMethod.DELETE, "/api/users/**").hasRole("ADMIN")
-                .anyRequest().authenticated() // Tất cả các API còn lại đều bắt buộc phải có Token hợp lệ
+                
+                .requestMatchers("/api/**").authenticated()
+                
+                .anyRequest().permitAll()
             )
             
             // Báo cho Spring biết cách tìm User từ Database
