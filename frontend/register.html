@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Đăng ký - Hệ thống Thư viện PTIT</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="auth-body">
+
+    <div class="auth-card">
+        <h3 class="text-center mb-4">📚 Thư viện PTIT</h3>
+        <h5 class="text-center text-muted mb-4">Tạo tài khoản mới</h5>
+        
+        <form id="registerForm">
+            <div class="mb-3">
+                <label for="fullName" class="form-label">Họ và tên</label>
+                <input type="text" class="form-control" id="fullName" placeholder="VD: Nguyễn Văn A" required>
+            </div>
+
+            <div class="mb-3">
+                <label for="email" class="form-label">Email tài khoản</label>
+                <input type="email" class="form-control" id="email" placeholder="Email đăng ký" required>
+            </div>
+            
+            <div class="mb-4">
+                <label for="password" class="form-label">Mật khẩu</label>
+                <input type="password" class="form-control" id="password" placeholder="Tối thiểu 6 ký tự" required minlength="6">
+            </div>
+            
+            <button type="submit" class="btn btn-custom w-100 py-2">Đăng ký ngay</button>
+            
+            <div class="text-center mt-3">
+                <span class="text-muted">Đã có tài khoản? </span>
+                <a href="/login" class="text-decoration-none">Đăng nhập ngay</a>
+            </div>
+        </form>
+    </div>
+
+    <script src="/js/auth.js"></script>
+</body>
+</html>
