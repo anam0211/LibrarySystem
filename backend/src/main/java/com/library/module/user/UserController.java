@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -24,13 +25,22 @@ public class UserController {
     public ResponseEntity<?> getCurrentUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         
-        // Lấy ra email của người đang gửi request
+        // Lấy email user
         String currentEmail = authentication.getName(); 
         
-        // Trả về một lời chào để chứng minh API đã được gọi thành công
-        String message = "Tuyệt vời! " + currentEmail + " đã vượt qua màng lọc bảo mật bằng Token hợp lệ.";
+        // Lấy dữ liệu thật từ Database
+        UserEntity user = userRepository.findByEmail(currentEmail)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng!"));
         
-        return ResponseEntity.ok(message);
+        // Đóng gói thành dạng JSON
+        java.util.Map<String, Object> userData = new java.util.HashMap<>();
+        userData.put("fullName", user.getFullName());
+        userData.put("email", user.getEmail());
+        
+        // Trả về Role (String)
+        userData.put("role", user.getRole().name()); // Thêm .name() nếu Role của bạn là Enum
+        
+        return ResponseEntity.ok(userData);
     }
 
     @GetMapping
@@ -41,14 +51,21 @@ public class UserController {
 
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteUser(@PathVariable Integer id) {
-        // 1. Tìm user theo ID
         UserEntity user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng với ID này!"));
 
-        // 2. Chuyển trạng thái sang SUSPENDED (Khóa tài khoản)
+        userRepository.delete(user);
+        return ResponseEntity.ok("Đã xóa tài khoản người dùng thành công!");
+    }
+
+    @PutMapping("/{id}/suspend")
+    public ResponseEntity<?> suspendUser(@PathVariable Integer id) {
+        UserEntity user = userRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng với ID này!"));
+
         user.setStatus(UserStatus.SUSPENDED); 
         userRepository.save(user);
 
-        return ResponseEntity.ok("Đã khóa (xóa mềm) tài khoản người dùng thành công!");
+        return ResponseEntity.ok("Đã khóa tài khoản người dùng thành công!");
     }
 }
