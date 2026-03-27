@@ -1,4 +1,4 @@
-package com.library.module.user;
+package com.library.module.user.entity;
 
 import java.time.LocalDateTime;
 
@@ -26,7 +26,7 @@ import lombok.Setter;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class UserEntity {
+public class User {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

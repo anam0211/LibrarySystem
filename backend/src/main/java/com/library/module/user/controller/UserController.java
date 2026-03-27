@@ -1,4 +1,4 @@
-package com.library.module.user;
+package com.library.module.user.controller;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -10,6 +10,10 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import com.library.module.user.entity.User;
+import com.library.module.user.entity.UserStatus;
+import com.library.module.user.repository.UserRepository;
 
 @RestController
 @RequestMapping("/api/users")
@@ -29,7 +33,7 @@ public class UserController {
         String currentEmail = authentication.getName(); 
         
         // Lấy dữ liệu thật từ Database
-        UserEntity user = userRepository.findByEmail(currentEmail)
+        User user = userRepository.findByEmail(currentEmail)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng!"));
         
         // Đóng gói thành dạng JSON
@@ -51,7 +55,7 @@ public class UserController {
 
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteUser(@PathVariable Integer id) {
-        UserEntity user = userRepository.findById(id)
+        User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng với ID này!"));
 
         userRepository.delete(user);
@@ -60,7 +64,7 @@ public class UserController {
 
     @PutMapping("/{id}/suspend")
     public ResponseEntity<?> suspendUser(@PathVariable Integer id) {
-        UserEntity user = userRepository.findById(id)
+        User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng với ID này!"));
 
         user.setStatus(UserStatus.SUSPENDED); 

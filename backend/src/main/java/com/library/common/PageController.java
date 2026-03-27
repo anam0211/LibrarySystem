@@ -1,4 +1,4 @@
-package com.library.security; // Giữ nguyên package của bạn
+package com.library.common; // Giữ nguyên package của bạn
 
 import org.springframework.boot.webmvc.error.ErrorController;
 import org.springframework.stereotype.Controller;
@@ -7,7 +7,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 
 @Controller
-// THÊM implements ErrorController VÀO ĐÂY
 public class PageController implements ErrorController {
 
     // XỬ LÝ CÁC TRANG BÌNH THƯỜNG (Welcome, Login, Dashboard...)
@@ -25,7 +24,7 @@ public class PageController implements ErrorController {
         return "redirect:/welcome"; 
     }
 
-    // XỬ LÝ NGOẠI LỆ GỘP CHUNG VÀO ĐÂY (Lỗi 404, 500...)
+    // XỬ LÝ LỖI
     @RequestMapping("/error")
     public String handleError() {
         return "forward:/error.html";

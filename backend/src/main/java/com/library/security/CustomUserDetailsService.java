@@ -8,9 +8,9 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
-import com.library.module.user.UserEntity;
-import com.library.module.user.UserRepository;
-import com.library.module.user.UserStatus;
+import com.library.module.user.entity.User;
+import com.library.module.user.entity.UserStatus;
+import com.library.module.user.repository.UserRepository;
 
 @Service
 public class CustomUserDetailsService implements UserDetailsService {
@@ -25,7 +25,7 @@ public class CustomUserDetailsService implements UserDetailsService {
     @Override
     public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
         // 1. Tìm user trong cơ sở dữ liệu bằng email
-        UserEntity user = userRepository.findByEmail(email)
+        User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new UsernameNotFoundException("Không tìm thấy người dùng với email: " + email));
 
         // 2. Chuyển đổi Role của bạn thành Authority của Spring Security

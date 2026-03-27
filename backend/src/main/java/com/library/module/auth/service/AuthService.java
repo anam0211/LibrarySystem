@@ -1,4 +1,4 @@
-package com.library.module.auth;
+package com.library.module.auth.service;
 
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -7,10 +7,13 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
-import com.library.module.user.Role;
-import com.library.module.user.UserEntity;
-import com.library.module.user.UserRepository;
-import com.library.module.user.UserStatus;
+import com.library.module.auth.dto.AuthResponse;
+import com.library.module.auth.dto.LoginRequest;
+import com.library.module.auth.dto.RegisterRequest;
+import com.library.module.user.entity.Role;
+import com.library.module.user.entity.User;
+import com.library.module.user.entity.UserStatus;
+import com.library.module.user.repository.UserRepository;
 import com.library.security.JwtTokenProvider;
 
 @Service
@@ -35,7 +38,7 @@ public class AuthService {
             throw new RuntimeException("Email đã được sử dụng!");
         }
 
-        UserEntity user = UserEntity.builder()
+        User user = User.builder()
                 .fullName(request.getFullName())
                 .email(request.getEmail())
                 // Băm mật khẩu trước khi lưu
@@ -63,7 +66,7 @@ public class AuthService {
         String jwt = jwtTokenProvider.generateToken(request.getEmail());
 
         // 4. Lấy thông tin user để trả về kèm token
-        UserEntity user = userRepository.findByEmail(request.getEmail()).orElseThrow();
+        User user = userRepository.findByEmail(request.getEmail()).orElseThrow();
 
         return AuthResponse.builder()
                 .token(jwt)
