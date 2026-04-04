@@ -5,12 +5,15 @@ import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.authentication.ProviderManager;
+import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
@@ -29,17 +32,26 @@ public class SecurityConfig {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
         this.customUserDetailsService = customUserDetailsService;
     }
-
+    
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
     // Xuất AuthenticationManager ra thành Bean để lát nữa dùng trong AuthController (lúc Login)
     @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration) throws Exception {
-        return authenticationConfiguration.getAuthenticationManager();
+    public AuthenticationManager authenticationManager() {
+        DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider(customUserDetailsService);
+        authProvider.setPasswordEncoder(passwordEncoder()); 
+        
+        return new ProviderManager(authProvider);
     }
 
     // Cấu hình màng lọc bảo mật chính
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
+            .formLogin(form -> form.disable())
+            .httpBasic(basic -> basic.disable())
             // Tắt CSRF (Cross-Site Request Forgery), dùng API thuần (Stateless) với JWT
             .csrf(AbstractHttpConfigurer::disable)
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
@@ -49,9 +61,8 @@ public class SecurityConfig {
             
             // Cấu hình phân quyền các đường dẫn API
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/", "/*.html", "/css/**", "/js/**", "/error").permitAll()
+                .requestMatchers("/", "/**/*.html", "/css/**", "/js/**", "/components/**", "/error").permitAll()
                 .requestMatchers("/welcome", "/login", "/register", "/dashboard").permitAll()
-
                 .requestMatchers("/api/auth/**", "/api/public/**").permitAll()
 
                 .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/users").hasRole("ADMIN")

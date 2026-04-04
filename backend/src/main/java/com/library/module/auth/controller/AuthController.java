@@ -7,10 +7,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.library.module.auth.dto.AuthResponse;
-import com.library.module.auth.dto.LoginRequest;
-import com.library.module.auth.dto.RegisterRequest;
-import com.library.module.auth.service.AuthService;
+import com.library.common.response.ApiResponse;
+import com.library.module.auth.dto.request.LoginRequest;
+import com.library.module.auth.dto.request.RegisterRequest;
+import com.library.module.auth.dto.response.AuthResponse;
+import com.library.module.auth.service.AuthService; // Nhớ import ApiResponse
 
 import jakarta.validation.Valid;
 
@@ -26,22 +27,40 @@ public class AuthController {
     }
 
     @PostMapping("/register")
-    public ResponseEntity<?> registerUser(@Valid @RequestBody RegisterRequest request) {
+    public ResponseEntity<ApiResponse<String>> registerUser(@Valid @RequestBody RegisterRequest request) {
         try {
             String message = authService.register(request);
-            return ResponseEntity.ok(message);
+            // Gói kết quả vào ApiResponse (code mặc định tự lấy 1000)
+            ApiResponse<String> apiResponse = ApiResponse.<String>builder()
+                    .message(message)
+                    .build();
+            return ResponseEntity.ok(apiResponse);
         } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            // Gói lỗi vào ApiResponse để Frontend đọc được message
+            ApiResponse<String> errorResponse = ApiResponse.<String>builder()
+                    .code(400)
+                    .message(e.getMessage())
+                    .build();
+            return ResponseEntity.badRequest().body(errorResponse);
         }
     }
 
     @PostMapping("/login")
-    public ResponseEntity<?> authenticateUser(@Valid @RequestBody LoginRequest request) {
+    public ResponseEntity<ApiResponse<AuthResponse>> authenticateUser(@Valid @RequestBody LoginRequest request) {
         try {
-            AuthResponse response = authService.login(request);
-            return ResponseEntity.ok(response);
+            AuthResponse authResponse = authService.login(request);
+            // Gói AuthResponse vào biến result của ApiResponse (code mặc định 1000)
+            ApiResponse<AuthResponse> apiResponse = ApiResponse.<AuthResponse>builder()
+                    .result(authResponse)
+                    .build();
+            return ResponseEntity.ok(apiResponse);
         } catch (Exception e) {
-            return ResponseEntity.status(401).body("Đăng nhập thất bại: Sai email hoặc mật khẩu, hoặc tài khoản bị khóa.");
+            // Trả về lỗi 401 kèm message chuẩn xác
+            ApiResponse<AuthResponse> errorResponse = ApiResponse.<AuthResponse>builder()
+                    .code(401)
+                    .message("Sai email hoặc mật khẩu, hoặc tài khoản bị khóa.")
+                    .build();
+            return ResponseEntity.status(401).body(errorResponse);
         }
     }
 }

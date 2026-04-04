@@ -15,8 +15,13 @@ public class WebConfig implements WebMvcConfigurer {
         String currentDir = System.getProperty("user.dir");
     
         String path1 = Paths.get(currentDir, "..", "frontend").normalize().toUri().toString();
+        if (!path1.endsWith("/")) {
+            path1 += "/"; 
+        }
         String path2 = Paths.get(currentDir, "frontend").normalize().toUri().toString();
-
+        if (!path2.endsWith("/")) {
+            path2 += "/"; 
+        }
         registry.addResourceHandler("/**")
                 .addResourceLocations(path1, path2, "classpath:/static/");
     }

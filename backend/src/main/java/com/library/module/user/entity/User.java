@@ -20,12 +20,12 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Entity
-@Table(name = "users") // Vẫn map đúng với bảng "users" trong SQL Server
+@Builder
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
+@Table(name = "users") // Vẫn map đúng với bảng "users" trong SQL Server
 public class User {
 
     @Id

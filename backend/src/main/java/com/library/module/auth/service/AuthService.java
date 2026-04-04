@@ -1,5 +1,6 @@
 package com.library.module.auth.service;
 
+import org.springframework.context.annotation.Lazy;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -7,14 +8,15 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
-import com.library.module.auth.dto.AuthResponse;
-import com.library.module.auth.dto.LoginRequest;
-import com.library.module.auth.dto.RegisterRequest;
+import com.library.module.auth.dto.request.LoginRequest;
+import com.library.module.auth.dto.request.RegisterRequest;
+import com.library.module.auth.dto.response.AuthResponse;
 import com.library.module.user.entity.Role;
 import com.library.module.user.entity.User;
 import com.library.module.user.entity.UserStatus;
 import com.library.module.user.repository.UserRepository;
 import com.library.security.JwtTokenProvider;
+
 
 @Service
 public class AuthService {
@@ -24,8 +26,8 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
 
-    public AuthService(AuthenticationManager authenticationManager, UserRepository userRepository,
-                       PasswordEncoder passwordEncoder, JwtTokenProvider jwtTokenProvider) {
+    public AuthService(@Lazy AuthenticationManager authenticationManager, UserRepository userRepository,
+                      @Lazy PasswordEncoder passwordEncoder,@Lazy JwtTokenProvider jwtTokenProvider) {
         this.authenticationManager = authenticationManager;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
