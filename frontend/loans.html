@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quản lý mượn trả - BookHub</title>
+    
+    <link rel="stylesheet" href="css/variables.css">
+    <link rel="stylesheet" href="css/main.css?v=999">
+
+    <script src="js/utils.js?v=2"></script>
+    <script>requireAuth();</script>
+</head>
+<body>
+    <div class="app">
+        <div id="sidebar-container"></div>
+
+        <main class="content">
+            <div id="topbar-container"></div>
+
+            <section class="page active" id="loan-list">
+                <div class="section-head">
+                    <div>
+                        <p class="eyebrow">Quản lý thư viện</p>
+                        <h2>Danh sách phiếu mượn trả</h2>
+                    </div>
+                    <div class="actions">
+                        <a href="create-loan.html" class="btn primary" style="text-decoration: none;">+ Tạo phiếu mượn mới</a>
+                    </div>
+                </div>
+
+                <div class="table-card" style="margin-bottom: 18px; padding: 16px;">
+                    <div class="filter-grid" style="grid-template-columns: 2fr 1fr 1fr 1fr;">
+                        <div class="field">
+                            <input type="text" placeholder="Tìm theo Mã phiếu, Tên độc giả...">
+                        </div>
+                        <div class="field">
+                            <select>
+                                <option value="">Tất cả trạng thái</option>
+                                <option value="BORROWING">Đang mượn</option>
+                                <option value="RETURNED">Đã trả</option>
+                                <option value="OVERDUE">Quá hạn</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <input type="date" title="Từ ngày">
+                        </div>
+                        <button class="btn secondary">Lọc dữ liệu</button>
+                    </div>
+                </div>
+
+                <div class="table-card table-wrap">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Mã phiếu</th>
+                                <th>Độc giả</th>
+                                <th>Cuốn sách</th>
+                                <th>Ngày mượn</th>
+                                <th>Hạn trả</th>
+                                <th>Trạng thái</th>
+                                <th>Thao tác</th>
+                            </tr>
+                        </thead>
+                        <tbody id="loan-table-body">
+                            <tr>
+                                <td><strong>#PM-1042</strong></td>
+                                <td>Nguyễn Văn A<br><small class="subtle">SV-2022-001</small></td>
+                                <td>Clean Code<br><small class="subtle">Robert C. Martin</small></td>
+                                <td>01/04/2026</td>
+                                <td>15/04/2026</td>
+                                <td><span class="badge info">Đang mượn</span></td>
+                                <td>
+                                    <div class="actions">
+                                        <a href="loan-detail.html?id=PM-1042" class="action-link" style="text-decoration: none;">Chi tiết</a>
+                                        <button class="action-link" style="color: var(--blue);">Trả sách</button>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>#PM-1041</strong></td>
+                                <td>Trần Thị B<br><small class="subtle">SV-2023-089</small></td>
+                                <td>Design Patterns<br><small class="subtle">Gang of Four</small></td>
+                                <td>20/03/2026</td>
+                                <td>04/04/2026</td>
+                                <td><span class="badge danger">Quá hạn</span></td>
+                                <td>
+                                    <div class="actions">
+                                        <button class="action-link">Chi tiết</button>
+                                        <button class="action-link" style="color: var(--red);">Phạt</button>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>#PM-1039</strong></td>
+                                <td>Lê Minh C<br><small class="subtle">SV-2021-102</small></td>
+                                <td>Head First Java<br><small class="subtle">Kathy Sierra</small></td>
+                                <td>10/03/2026</td>
+                                <td>24/03/2026</td>
+                                <td><span class="badge success">Đã trả</span></td>
+                                <td>
+                                    <div class="actions">
+                                        <button class="action-link">Chi tiết</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/profile.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            initLayout(); 
+        });
+    </script>
+</body>
+</html>
