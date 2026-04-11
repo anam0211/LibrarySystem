@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hồ sơ cá nhân - BookHub Library</title>
+    
+    <link rel="stylesheet" href="css/variables.css">
+    <link rel="stylesheet" href="css/main.css">
+
+    <script src="js/utils.js"></script>
+    <script>requireAuth();</script>
+</head>
+<body>
+    <div class="app">
+        <div id="sidebar-container"></div>
+
+        <main class="content">
+            <div id="topbar-container"></div>
+
+            <section class="page active" id="profile-page">
+                <div class="section-head">
+                    <div>
+                        <p class="eyebrow">Quản lý tài khoản</p>
+                        <h2>Hồ sơ cá nhân & Bảo mật</h2>
+                    </div>
+                </div>
+
+                <div id="profile-message" style="display: none; padding: 12px 16px; border-radius: 12px; margin-bottom: 18px; font-weight: 600; font-size: 0.9rem;"></div>
+
+                <div class="grid-2">
+                    <div class="info-card">
+                        <h3 class="card-title" style="margin-bottom: 18px;">Thông tin cơ bản</h3>
+                        <form id="updateProfileForm">
+                            <div class="field" style="margin-bottom: 16px;">
+                                <label for="profileName">Họ và tên</label>
+                                <input type="text" id="profileName" required placeholder="Nhập họ và tên mới...">
+                            </div>
+                            
+                            <div class="field" style="margin-bottom: 16px;">
+                                <label for="profileEmail">Địa chỉ Email</label>
+                                <input type="email" id="profileEmail" disabled style="background: #f1f5f9; cursor: not-allowed;" title="Email không thể thay đổi">
+                            </div>
+
+                            <div class="field" style="margin-bottom: 24px;">
+                                <label>Vai trò hệ thống</label>
+                                <input type="text" id="profileRole" disabled style="background: #f1f5f9; cursor: not-allowed; font-weight: 700; color: var(--blue);">
+                            </div>
+
+                            <button type="submit" class="btn primary" style="width: 100%;">Lưu thay đổi</button>
+                        </form>
+                    </div>
+
+                    <div class="info-card">
+                        <h3 class="card-title" style="margin-bottom: 18px;">Đổi mật khẩu</h3>
+                        <form id="changePasswordForm">
+                            <div class="field" style="margin-bottom: 16px;">
+                                <label for="oldPassword">Mật khẩu hiện tại</label>
+                                <input type="password" id="oldPassword" required placeholder="Nhập mật khẩu cũ...">
+                            </div>
+                            
+                            <div class="field" style="margin-bottom: 16px;">
+                                <label for="newPassword">Mật khẩu mới</label>
+                                <input type="password" id="newPassword" required placeholder="Mật khẩu mới (ít nhất 6 ký tự)...">
+                            </div>
+
+                            <div class="field" style="margin-bottom: 24px;">
+                                <label for="confirmNewPassword">Xác nhận mật khẩu mới</label>
+                                <input type="password" id="confirmNewPassword" required placeholder="Nhập lại mật khẩu mới...">
+                            </div>
+
+                            <button type="submit" class="btn secondary" style="width: 100%; border-color: #cbd5e1;">Cập nhật mật khẩu</button>
+                        </form>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/pages/profile.js"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            initLayout(); 
+        });
+    </script>
+</body>
+</html>

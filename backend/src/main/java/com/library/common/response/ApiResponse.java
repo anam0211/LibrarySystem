@@ -16,12 +16,17 @@ import lombok.experimental.FieldDefaults;
 @NoArgsConstructor
 @AllArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE)
-@JsonInclude(JsonInclude.Include.NON_NULL) // khong tra data khi null
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class ApiResponse<T> {
-    int code;
+    @Builder.Default
+    int code = 1000;
+    
     String message;
+    
     T result;
+    
     Instant timestamp;
+
     public static <T> ApiResponse<T> success(T result){
         return ApiResponse.<T>builder()
         .code(1000)

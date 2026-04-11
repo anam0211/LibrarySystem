@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Xu hướng đọc - BookHub Library</title>
+    
+    <link rel="stylesheet" href="css/variables.css">
+    <link rel="stylesheet" href="css/main.css">
+
+    
+</head>
+<body>
+    <script src="js/utils.js"></script>
+    <script>requireAuth();</script>
+    <div class="app">
+        <div id="sidebar-container"></div>
+
+        <main class="content">
+            <div id="topbar-container"></div>
+
+            <section class="page active" id="dashboard">
+                <div class="section-head">
+                    <div>
+                        <p class="eyebrow">Trang xu hướng đọc</p>
+                        <h2>Những gì cộng đồng độc giả đang quan tâm lúc này</h2>
+                    </div>
+                    <div class="actions">
+                        <button class="btn secondary" type="button">Tuần này</button>
+                        <button class="btn primary" type="button">Tháng này</button>
+                    </div>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-card"><p class="eyebrow">Lượt xem sách</p><div class="stat-value">48.260</div><span class="badge success">+12,4%</span><p class="mini">so với tháng trước</p></div>
+                    <div class="stat-card"><p class="eyebrow">Sách được lưu</p><div class="stat-value">9.862</div><span class="badge success">Tăng đều</span><p class="mini">được thêm vào tủ sách cá nhân</p></div>
+                    <div class="stat-card"><p class="eyebrow">Chủ đề nổi bật</p><div class="stat-value">186</div><span class="badge warning">Đáng chú ý</span><p class="mini">công nghệ, kỹ năng, dữ liệu</p></div>
+                    <div class="stat-card"><p class="eyebrow">Tài nguyên số</p><div class="stat-value">4.326</div><span class="badge info">+124 mới</span><p class="mini">preview, PDF, ebook và ảnh bìa</p></div>
+                </div>
+
+                <div class="grid-2">
+                    <div class="info-card">
+                        <p class="eyebrow">Xu hướng khám phá theo tháng</p>
+                        <h3 class="card-title">Mức độ quan tâm của độc giả</h3>
+                        <div class="bars">
+                            <div class="bar-col"><span style="height: 38%"></span><small>T1</small></div>
+                            <div class="bar-col"><span style="height: 52%"></span><small>T2</small></div>
+                            <div class="bar-col"><span style="height: 47%"></span><small>T3</small></div>
+                            <div class="bar-col"><span style="height: 64%"></span><small>T4</small></div>
+                            <div class="bar-col"><span style="height: 71%"></span><small>T5</small></div>
+                            <div class="bar-col"><span style="height: 58%"></span><small>T6</small></div>
+                            <div class="bar-col"><span style="height: 79%"></span><small>T7</small></div>
+                            <div class="bar-col"><span style="height: 83%"></span><small>T8</small></div>
+                            <div class="bar-col"><span style="height: 76%"></span><small>T9</small></div>
+                            <div class="bar-col"><span style="height: 92%"></span><small>T10</small></div>
+                            <div class="bar-col"><span style="height: 88%"></span><small>T11</small></div>
+                            <div class="bar-col"><span style="height: 96%"></span><small>T12</small></div>
+                        </div>
+                    </div>
+
+                    <div class="info-card">
+                        <p class="eyebrow">Top nội dung nổi bật</p>
+                        <h3 class="card-title">Những gì đang được quan tâm</h3>
+                        <div class="stack">
+                            <div class="kpi-card"><strong>Sách được xem nhiều nhất</strong><p class="subtle">Machine Learning Cơ Bản</p></div>
+                            <div class="kpi-card"><strong>Thể loại bứt lên nhanh nhất</strong><p class="subtle">Khoa học dữ liệu</p></div>
+                            <div class="kpi-card"><strong>Tỷ lệ đọc thử thành công</strong><p class="subtle">61% người xem mở preview tiếp tục đọc sâu hơn</p></div>
+                            <div class="kpi-card"><strong>Nhà xuất bản được theo dõi nhiều</strong><p class="subtle">NXB Trẻ với 128 đầu sách được lưu trong tháng</p></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid-3">
+                    <div class="info-card"><p class="eyebrow">Phân bổ sở thích</p><h3 class="card-title">Chủ đề được đọc nhiều</h3><div class="list"><div class="list-item">Công nghệ <span class="subtle">34%</span></div><div class="list-item">Kinh doanh <span class="subtle">21%</span></div><div class="list-item">Văn học <span class="subtle">18%</span></div><div class="list-item">Khoa học <span class="subtle">15%</span></div><div class="list-item">Thiết kế <span class="subtle">12%</span></div></div></div>
+                    <div class="info-card"><p class="eyebrow">Danh sách nên đọc</p><h3 class="card-title">Đề cử cho bạn</h3><div class="timeline"><div class="timeline-item">24 sách nền tảng dành cho người mới học lập trình.</div><div class="timeline-item">8 sách kỹ năng mềm được đánh giá cao tuần này.</div><div class="timeline-item">17 đầu sách kinh doanh vừa có bản đọc thử mới.</div></div></div>
+                    <div class="info-card"><p class="eyebrow">Hoạt động cộng đồng</p><h3 class="card-title">Mới trong hôm nay</h3><div class="timeline"><div class="timeline-item">09:15 - Bổ sung bộ sưu tập sách kỹ năng dành cho sinh viên.</div><div class="timeline-item">11:20 - Mở thêm 32 ảnh bìa độ phân giải cao.</div><div class="timeline-item">14:40 - Cập nhật danh sách sách công nghệ đáng chú ý trong tháng.</div></div></div>
+                </div>
+            </section>
+            
+        </main>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/pages/profile.js"></script>
+    <script src="js/pages/dashboard.js"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            initLayout(); 
+        });
+    </script>
+</body>
+</html>
