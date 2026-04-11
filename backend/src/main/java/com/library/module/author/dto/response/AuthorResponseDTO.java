@@ -18,5 +18,6 @@ public class AuthorResponseDTO {
     Integer id;
     String name;
     String bio;
+    Long bookCount;
     LocalDateTime createdAt;
 }

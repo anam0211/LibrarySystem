@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 
 
 
@@ -48,6 +49,12 @@ public class CategoryController {
     public ApiResponse<CategoryResponseDTO> createCategory(@RequestBody CategoryRequestDTO categoryRequestDTO) {
         
         return ApiResponse.success(categoryService.createCategory(categoryRequestDTO));
+    }
+
+    @DeleteMapping("/{id}")
+    public ApiResponse<Void> deleteCategory(@PathVariable Integer id) {
+        categoryService.deleteCategory(id);
+        return ApiResponse.success(null);
     }
     
     

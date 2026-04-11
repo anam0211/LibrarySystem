@@ -10,15 +10,33 @@ import com.library.common.response.ApiResponse;
 @ControllerAdvice
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(value = ResourceNotFoundException.class)
+    ResponseEntity<ApiResponse<Object>> handleResourceNotFound(ResourceNotFoundException exception) {
+        ApiResponse<Object> response = ApiResponse.<Object>builder()
+                .code(4040)
+                .message(exception.getMessage())
+                .build();
+
+        return ResponseEntity.status(404).body(response);
+    }
+
+    @ExceptionHandler(value = BadRequestException.class)
+    ResponseEntity<ApiResponse<Object>> handleBadRequest(BadRequestException exception) {
+        ApiResponse<Object> response = ApiResponse.<Object>builder()
+                .code(4000)
+                .message(exception.getMessage())
+                .build();
+
+        return ResponseEntity.badRequest().body(response);
+    }
+
    @ExceptionHandler(Exception.class)
 public ResponseEntity<ApiResponse<Object>> handleException(Exception ex) {
     ex.printStackTrace();
-
     ApiResponse<Object> response = ApiResponse.<Object>builder()
             .code(9999)
             .message(ex.getClass().getSimpleName() + ": " + ex.getMessage())
             .build();
-
     return ResponseEntity.internalServerError().body(response);
 }
     @ExceptionHandler(value = AppException.class)
@@ -27,7 +45,7 @@ public ResponseEntity<ApiResponse<Object>> handleException(Exception ex) {
         ApiResponse apiResponse= new ApiResponse<>();
         apiResponse.setCode(errorCode.getCode());
         apiResponse.setMessage(errorCode.getMessage());
-        return ResponseEntity.badRequest().body(apiResponse);
+        return ResponseEntity.status(errorCode.getHttpStatus()).body(apiResponse);
     }
     @ExceptionHandler(value = MethodArgumentNotValidException.class)
     ResponseEntity<ApiResponse> handlingValidation(MethodArgumentNotValidException exception){

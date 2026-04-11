@@ -12,6 +12,7 @@ import com.library.module.author.dto.response.AuthorResponseDTO;
 import com.library.module.author.entity.Author;
 import com.library.module.author.exception.AuthorErrorCode;
 import com.library.module.author.mapper.AuthorMapper;
+import com.library.module.book.repository.BookAuthorRepository;
 import com.library.module.author.repository.AuthorRepository;
 
 import jakarta.transaction.Transactional;
@@ -26,30 +27,42 @@ import lombok.experimental.FieldDefaults;
 public class AuthorService {
     AuthorRepository authorRepository;
     AuthorMapper authorMapper;
+    BookAuthorRepository bookAuthorRepository;
     public List<AuthorResponseDTO> findAll(){
         List<Author> author= new ArrayList<>();
         author= authorRepository.findAll();
-        return authorMapper.toResponseDtoList(author);
+        return author.stream().map(this::toResponse).toList();
     }
     public AuthorResponseDTO findById(Integer id){
         Author author= authorRepository.findById(id).orElseThrow(() -> new AppException(AuthorErrorCode.AUTHOR_NOT_FOUND));
-        return authorMapper.toResponseDto(author);
+        return toResponse(author);
     }
     public AuthorResponseDTO createAuthor(AuthorRequestDTO authorRequestDTO){
         Author authorCreate= authorRepository.save(authorMapper.toEntity(authorRequestDTO));
-        return authorMapper.toResponseDto(authorCreate);
+        return toResponse(authorCreate);
     }
     public AuthorResponseDTO updateAuthor(Integer id, AuthorRequestDTO authorRequestDTO){
         Author author= authorRepository.findById(id).orElseThrow(()-> new AppException(AuthorErrorCode.AUTHOR_NOT_FOUND));
         author.setName(authorRequestDTO.getName());
         author.setBio(authorRequestDTO.getBio());
         Author authorUpdate= authorRepository.save(author);
-        return authorMapper.toResponseDto(authorUpdate);
+        return toResponse(authorUpdate);
     }
 
     public void deleteAuthor(Integer id){
         Author author= authorRepository.findById(id).orElseThrow(()-> new AppException(AuthorErrorCode.AUTHOR_NOT_FOUND));
+
+        if (bookAuthorRepository.countByAuthor_Id(id) > 0) {
+            throw new AppException(AuthorErrorCode.AUTHOR_LINKED_BOOK);
+        }
+
         authorRepository.delete(author);
+    }
+
+    private AuthorResponseDTO toResponse(Author author) {
+        AuthorResponseDTO responseDTO = authorMapper.toResponseDto(author);
+        responseDTO.setBookCount(bookAuthorRepository.countByAuthor_Id(author.getId()));
+        return responseDTO;
     }
 
 }

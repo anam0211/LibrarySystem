@@ -17,3 +17,7 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.SQLServerDialect
+
+app:
+  media:
+    upload-dir: d:/LibarySystem/backend/uploads/media
