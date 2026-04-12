@@ -7,14 +7,14 @@ function renderBootstrapError(error) {
     return;
   }
 
-  const message = error instanceof Error ? error.message : "Khong the khoi dong frontend.";
+  const message = error instanceof Error ? error.message : "Không thể khởi động frontend.";
   const details = error instanceof Error && error.stack ? error.stack : String(error || "");
 
   appRoot.innerHTML = `
     <section class="startup-card">
-      <p class="eyebrow">Khoi dong that bai</p>
-      <h1>Frontend chua render duoc giao dien</h1>
-      <p class="subtle">Hay nhan <strong>Ctrl + F5</strong> de tai lai cache. Neu van loi, xem chi tiet ben duoi.</p>
+      <p class="eyebrow">Khởi động thất bại</p>
+      <h1>Frontend chưa render được giao diện</h1>
+      <p class="subtle">Hãy nhấn <strong>Ctrl + F5</strong> để tải lại cache. Nếu vẫn lỗi, xem chi tiết bên dưới.</p>
       <div class="startup-error">
         <strong>${message}</strong>
         <pre>${details}</pre>

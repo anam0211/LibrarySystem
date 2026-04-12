@@ -57,7 +57,7 @@ function renderPdfPreview(asset) {
         </div>
       </div>
       <div class="media-preview-frame">
-        <iframe src="${escapeHtml(asset.fileUrl)}" title="${escapeHtml(asset.fileName)}" class="media-preview-embed"></iframe>
+        <iframe src="${escapeHtml(asset.fileUrl)}" title="${escapeHtml(asset.fileName)}" class="media-preview-embed" loading="lazy"></iframe>
       </div>
     </article>
   `;

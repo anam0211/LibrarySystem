@@ -1,13 +1,14 @@
-﻿import { API_BASE_URL, DEFAULT_HEADERS } from "../../config/api.js";
+import { API_BASE_URL, DEFAULT_HEADERS } from "../../config/api.js";
+import { getAuthorizationHeaders } from "./auth-token.js";
 
 async function request(path, options = {}) {
   try {
     const response = await fetch(`${API_BASE_URL}${path}`, {
       ...options,
-      headers: {
+      headers: getAuthorizationHeaders({
         ...DEFAULT_HEADERS,
         ...(options.headers || {})
-      }
+      })
     });
 
     const contentType = response.headers.get("content-type") || "";
@@ -34,7 +35,7 @@ async function request(path, options = {}) {
     return payload;
   } catch (error) {
     if (error instanceof TypeError) {
-      throw new Error(`Không thể kết nối backend tại ${API_BASE_URL}. Kiểm tra server và API_BASE_URL.`);
+      throw new Error(`Không thể kết nối backend tại ${API_BASE_URL}. Hãy kiểm tra server và API_BASE_URL.`);
     }
 
     throw error;

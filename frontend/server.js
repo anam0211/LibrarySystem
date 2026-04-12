@@ -1,4 +1,5 @@
 import http from "node:http";
+import https from "node:https";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, URL } from "node:url";
@@ -47,7 +48,22 @@ function resolveFilePath(requestPathname) {
 
 const server = http.createServer((request, response) => {
   const requestUrl = new URL(request.url, `http://${request.headers.host}`);
-  const filePath = resolveFilePath(requestUrl.pathname);
+  const pathname = requestUrl.pathname;
+
+  // Proxy /uploads/* and API files to backend
+  if (pathname.startsWith("/uploads/") || pathname.startsWith("/library/api/")) {
+    const backendUrl = new URL(`http://localhost:8080${pathname}${requestUrl.search}`);
+    http.get(backendUrl, (backendRes) => {
+      response.writeHead(backendRes.statusCode, backendRes.headers);
+      backendRes.pipe(response);
+    }).on("error", () => {
+      response.writeHead(502, { "Content-Type": "text/plain" });
+      response.end("502 Bad Gateway");
+    });
+    return;
+  }
+
+  const filePath = resolveFilePath(pathname);
 
   if (!filePath) {
     sendNotFound(response);

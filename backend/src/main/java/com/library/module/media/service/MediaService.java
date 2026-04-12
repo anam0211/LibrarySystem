@@ -105,6 +105,29 @@ public class MediaService {
         BookImage bookImage = bookImageRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay tai nguyen."));
 
+        deleteBookImage(bookImage);
+    }
+
+    public void deleteByBook(Integer bookId) {
+        bookImageRepository.findByBook_IdOrderByCreatedAtDesc(bookId)
+                .forEach(this::deleteStoredFileOnly);
+        bookImageRepository.deleteByBookId(bookId);
+    }
+
+    private void deleteBookImage(BookImage bookImage) {
+        if (bookImage == null) {
+            return;
+        }
+
+        deleteStoredFileOnly(bookImage);
+        bookImageRepository.delete(bookImage);
+    }
+
+    private void deleteStoredFileOnly(BookImage bookImage) {
+        if (bookImage == null) {
+            return;
+        }
+
         String storedName = extractStoredName(bookImage.getFileUrl());
 
         try {
@@ -113,8 +136,6 @@ public class MediaService {
             }
         } catch (IOException ignored) {
         }
-
-        bookImageRepository.delete(bookImage);
     }
 
     public Resource loadFile(String fileName) {

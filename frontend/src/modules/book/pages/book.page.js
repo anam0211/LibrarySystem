@@ -1,8 +1,9 @@
 import { escapeHtml, formatDate, formatNumber, truncate } from "../../../shared/utils/format.js";
+import { scrollToElement } from "../../../shared/utils/scroll.js";
 
 export const booksMeta = {
   title: "Sách",
-  description: "Quản lý sách, tồn kho và upload bìa hoặc file đính kèm trong cùng một màn hình."
+  description: "Quản lý sách, tồn kho."
 };
 
 const STATUS_OPTIONS = ["ACTIVE", "ARCHIVED"];
@@ -53,7 +54,7 @@ function mapBookToForm(book) {
   };
 }
 
-function renderAssetCard(asset) {
+function renderMediaAssetCard(asset) {
   const isImage = ["JPG", "JPEG", "PNG", "WEBP"].includes(asset.assetType);
 
   return `
@@ -75,6 +76,47 @@ function renderAssetCard(asset) {
         </div>
       </div>
     </article>
+  `;
+}
+
+function renderBookThumbnail(book) {
+  if (book.primaryImageUrl) {
+    return `<img src="${escapeHtml(book.primaryImageUrl)}" alt="${escapeHtml(book.title)}" class="table-cover-thumb">`;
+  }
+
+  return `<div class="table-cover-thumb table-cover-thumb-fallback">No image</div>`;
+}
+
+function renderMultiSelectField({ label, name, options, selectedIds, placeholder }) {
+  const selectedOptions = options.filter((option) => selectedIds.includes(String(option.id)));
+  const selectedLabel = selectedOptions.length
+    ? truncate(selectedOptions.map((option) => option.name).join(", "), 72)
+    : placeholder;
+
+  return `
+    <div class="field span-2">
+      <label>${escapeHtml(label)}</label>
+      <details class="multi-select-field">
+        <summary class="multi-select-summary">
+          <span class="multi-select-value ${selectedOptions.length ? "" : "is-placeholder"}">${escapeHtml(selectedLabel)}</span>
+          <span class="multi-select-chevron" aria-hidden="true"></span>
+        </summary>
+        <div class="multi-select-panel">
+          ${options.map((option) => `
+            <label class="multi-select-option">
+              <input
+                type="checkbox"
+                name="${escapeHtml(name)}"
+                value="${option.id}"
+                ${selectedIds.includes(String(option.id)) ? "checked" : ""}
+              >
+              <span>${escapeHtml(option.name)}</span>
+            </label>
+          `).join("")}
+        </div>
+      </details>
+      <p class="mini">Có thể chọn nhiều mục.</p>
+    </div>
   `;
 }
 
@@ -104,18 +146,18 @@ export function renderBooksPage(store, pageState) {
   const publishers = store.getPublishers();
   const selectedBook = store.getBookById(pageState.selectedId) || books[0] || null;
   const selectedBookMedia = selectedBook ? store.getMediaByBookId(selectedBook.id) : [];
+  const selectedBookCover = selectedBookMedia.find((asset) => asset.primary) || null;
   const selectedAuthorIds = pageState.form.authorIds.map(String);
   const selectedCategoryIds = pageState.form.categoryIds.map(String);
   const pageStart = booksPage.totalItems ? pageState.page * booksPage.size + 1 : 0;
   const pageEnd = booksPage.totalItems ? pageStart + books.length - 1 : 0;
   const lowStockCount = books.filter((book) => book.stockAvailable <= 2).length;
-  const selectedBookCover = selectedBookMedia.find((asset) => asset.primary) || null;
 
   return `
     <div class="section-head">
       <div>
         <p class="eyebrow">Catalog sách</p>
-        <h2>Quản lý sách, ảnh bìa và file đính kèm trong cùng một workspace</h2>
+        <h2>Quản lý sách, ảnh bìa và file đính kèm</h2>
       </div>
       <div class="actions">
         <button class="btn secondary" type="button" data-action="books-reset-filters">Đặt lại bộ lọc</button>
@@ -124,9 +166,21 @@ export function renderBooksPage(store, pageState) {
     </div>
 
     <div class="grid-3">
-      <div class="chip-card"><p class="eyebrow">Tổng kết quả</p><h3 class="card-title">${formatNumber(booksPage.totalItems)}</h3><p class="subtle">Số bản ghi trả về từ truy vấn backend.</p></div>
-      <div class="chip-card"><p class="eyebrow">Trang hiện tại</p><h3 class="card-title">${formatNumber(booksPage.page + 1)} / ${formatNumber(Math.max(booksPage.totalPages, 1))}</h3><p class="subtle">Đang hiển thị ${formatNumber(pageStart)}-${formatNumber(pageEnd)}.</p></div>
-      <div class="chip-card"><p class="eyebrow">Sắp hết sách</p><h3 class="card-title">${formatNumber(lowStockCount)}</h3><p class="subtle">Đầu sách có tồn khả dụng nhỏ hơn hoặc bằng 2 ở trang này.</p></div>
+      <div class="chip-card">
+        <p class="eyebrow">Tổng kết quả</p>
+        <h3 class="card-title">${formatNumber(booksPage.totalItems)}</h3>
+        <p class="subtle">Số bản ghi đang trả về từ backend.</p>
+      </div>
+      <div class="chip-card">
+        <p class="eyebrow">Trang hiện tại</p>
+        <h3 class="card-title">${formatNumber(booksPage.page + 1)} / ${formatNumber(Math.max(booksPage.totalPages, 1))}</h3>
+        <p class="subtle">Đang hiển thị ${formatNumber(pageStart)} - ${formatNumber(pageEnd)}.</p>
+      </div>
+      <div class="chip-card">
+        <p class="eyebrow">Sắp hết sách</p>
+        <h3 class="card-title">${formatNumber(lowStockCount)}</h3>
+        <p class="subtle">Đầu sách có tồn khả dụng nhỏ hơn hoặc bằng 2 ở trang này.</p>
+      </div>
     </div>
 
     <div class="table-card">
@@ -207,17 +261,20 @@ export function renderBooksPage(store, pageState) {
     </div>
 
     <div class="book-admin-grid">
-      <div class="table-card">
-        <div class="section-head">
+      <details class="table-card accordion-card" open>
+        <summary class="accordion-summary">
           <div>
             <p class="eyebrow">Danh sách sách</p>
             <h3 class="card-title">${formatNumber(books.length)} bản ghi trên trang này</h3>
           </div>
-        </div>
+          <span class="accordion-icon" aria-hidden="true"></span>
+        </summary>
+        <div class="accordion-content">
         <div class="table-wrap">
           <table class="table">
             <thead>
               <tr>
+                <th>Ảnh</th>
                 <th>Sách</th>
                 <th>Nhà xuất bản</th>
                 <th>Tồn kho</th>
@@ -230,11 +287,12 @@ export function renderBooksPage(store, pageState) {
                 ? books
                     .map(
                       (book) => `
-                        <tr class="${selectedBook?.id === book.id ? "row-selected" : ""}">
+                        <tr class="${selectedBook?.id === book.id ? "row-selected" : ""}" id="book-row-${book.id}">
+                          <td>${renderBookThumbnail(book)}</td>
                           <td>
                             <strong>${escapeHtml(book.title)}</strong>
                             <p class="mini">${escapeHtml(book.authorNames || "Chưa có tác giả")}</p>
-                            <p class="mini">${escapeHtml(book.primaryCategoryName)} / ${escapeHtml(book.isbn || "-")}</p>
+                            <p class="mini">${escapeHtml(book.primaryCategoryName || "Chưa có danh mục")} / ${escapeHtml(book.isbn || "-")}</p>
                           </td>
                           <td>${escapeHtml(book.publisherName || "-")}</td>
                           <td>${formatNumber(book.stockAvailable)} / ${formatNumber(book.stockTotal)}</td>
@@ -250,7 +308,7 @@ export function renderBooksPage(store, pageState) {
                       `
                     )
                     .join("")
-                : '<tr><td colspan="5" class="table-empty">Không có sách phù hợp với bộ lọc hiện tại.</td></tr>'}
+                : '<tr><td colspan="6" class="table-empty">Không có sách phù hợp với bộ lọc hiện tại.</td></tr>'}
             </tbody>
           </table>
         </div>
@@ -258,9 +316,10 @@ export function renderBooksPage(store, pageState) {
           <button class="action-link" type="button" data-action="books-prev-page" ${booksPage.first ? "disabled" : ""}>Trang trước</button>
           <button class="action-link" type="button" data-action="books-next-page" ${booksPage.last ? "disabled" : ""}>Trang sau</button>
         </div>
-      </div>
+        </div>
+      </details>
 
-      <div class="table-card">
+      <div id="books-detail-section" class="table-card">
         <div class="section-head">
           <div>
             <p class="eyebrow">Chi tiết sách</p>
@@ -303,7 +362,7 @@ export function renderBooksPage(store, pageState) {
                 <h4>Tệp đính kèm</h4>
                 <div class="book-asset-grid">
                   ${selectedBookMedia.length
-                    ? selectedBookMedia.map(renderAssetCard).join("")
+                    ? selectedBookMedia.map(renderMediaAssetCard).join("")
                     : '<div class="empty-state">Chưa có ảnh bìa hoặc file đính kèm.</div>'}
                 </div>
               </div>
@@ -322,123 +381,121 @@ export function renderBooksPage(store, pageState) {
       </div>
 
       <form id="books-form" class="form-grid form-grid-full">
-            <input type="hidden" name="id" value="${pageState.form.id}">
-            <div class="field">
-              <label>ISBN</label>
-              <input name="isbn" type="text" value="${escapeHtml(pageState.form.isbn)}" placeholder="978604..." required>
-            </div>
-            <div class="field">
-              <label>Tên sách</label>
-              <input name="title" type="text" value="${escapeHtml(pageState.form.title)}" placeholder="Nhập tên sách" required>
-            </div>
-            <div class="field span-2">
-              <label>Phụ đề</label>
-              <input name="subtitle" type="text" value="${escapeHtml(pageState.form.subtitle)}" placeholder="Phụ đề nếu có">
-            </div>
-            <div class="field span-2">
-              <label>Tác giả</label>
-              <select name="authorIds" multiple size="4" required>
-                ${authors
-                  .map(
-                    (author) => `<option value="${author.id}" ${selectedAuthorIds.includes(String(author.id)) ? "selected" : ""}>${escapeHtml(author.name)}</option>`
-                  )
-                  .join("")}
-              </select>
-            </div>
-            <div class="field span-2">
-              <label>Danh mục</label>
-              <select name="categoryIds" multiple size="4" required>
-                ${categories
-                  .map(
-                    (category) => `<option value="${category.id}" ${selectedCategoryIds.includes(String(category.id)) ? "selected" : ""}>${escapeHtml(category.name)}</option>`
-                  )
-                  .join("")}
-              </select>
-            </div>
-            <div class="field">
-              <label>Nhà xuất bản</label>
-              <select name="publisherId" required>
-                <option value="">Chọn nhà xuất bản</option>
-                ${publishers
-                  .map(
-                    (publisher) => `<option value="${publisher.id}" ${String(pageState.form.publisherId) === String(publisher.id) ? "selected" : ""}>${escapeHtml(publisher.name)}</option>`
-                  )
-                  .join("")}
-              </select>
-            </div>
-            <div class="field">
-              <label>Năm xuất bản</label>
-              <input name="publishYear" type="number" value="${escapeHtml(pageState.form.publishYear)}" min="1900" max="2100">
-            </div>
-            <div class="field">
-              <label>Mã ngôn ngữ</label>
-              <input name="languageCode" type="text" value="${escapeHtml(pageState.form.languageCode)}" placeholder="vi">
-            </div>
-            <div class="field">
-              <label>Số trang</label>
-              <input name="pageCount" type="number" value="${escapeHtml(pageState.form.pageCount)}" min="1">
-            </div>
-            <div class="field">
-              <label>Tổng tồn</label>
-              <input name="stockTotal" type="number" value="${escapeHtml(pageState.form.stockTotal)}" min="0">
-            </div>
-            <div class="field">
-              <label>Tồn khả dụng</label>
-              <input name="stockAvailable" type="number" value="${escapeHtml(pageState.form.stockAvailable)}" min="0">
-            </div>
-            <div class="field span-2">
-              <label>Từ khóa</label>
-              <input name="keywords" type="text" value="${escapeHtml(pageState.form.keywords)}" placeholder="java, spring, clean code">
-            </div>
-            <div class="field">
-              <label>Status</label>
-              <select name="status">
-                ${STATUS_OPTIONS
-                  .map((status) => `<option value="${status}" ${pageState.form.status === status ? "selected" : ""}>${status}</option>`)
-                  .join("")}
-              </select>
-            </div>
-            <div class="field span-2">
-              <label>Mô tả</label>
-              <textarea name="description" placeholder="Tóm tắt ngắn cho catalog">${escapeHtml(pageState.form.description)}</textarea>
-            </div>
+        <input type="hidden" name="id" value="${pageState.form.id}">
 
-            <div class="book-form-media span-2">
-              <div class="section-head">
-                <div>
-                  <p class="eyebrow">Media trong form sách</p>
-                  <h4 class="card-title">Tải ảnh bìa và ebook ngay tại đây</h4>
-                </div>
+        <div class="field">
+          <label>ISBN</label>
+          <input name="isbn" type="text" value="${escapeHtml(pageState.form.isbn)}" placeholder="978604..." required>
+        </div>
+        <div class="field">
+          <label>Tên sách</label>
+          <input name="title" type="text" value="${escapeHtml(pageState.form.title)}" placeholder="Nhập tên sách" required>
+        </div>
+        <div class="field span-2">
+          <label>Phụ đề</label>
+          <input name="subtitle" type="text" value="${escapeHtml(pageState.form.subtitle)}" placeholder="Phụ đề nếu có">
+        </div>
+
+        ${renderMultiSelectField({
+          label: "Tác giả",
+          name: "authorIds",
+          options: authors,
+          selectedIds: selectedAuthorIds,
+          placeholder: "Chọn tác giả"
+        })}
+
+        ${renderMultiSelectField({
+          label: "Danh mục",
+          name: "categoryIds",
+          options: categories,
+          selectedIds: selectedCategoryIds,
+          placeholder: "Chọn danh mục"
+        })}
+
+        <div class="field">
+          <label>Nhà xuất bản</label>
+          <select name="publisherId" required>
+            <option value="">Chọn nhà xuất bản</option>
+            ${publishers
+              .map(
+                (publisher) => `<option value="${publisher.id}" ${String(pageState.form.publisherId) === String(publisher.id) ? "selected" : ""}>${escapeHtml(publisher.name)}</option>`
+              )
+              .join("")}
+          </select>
+        </div>
+        <div class="field">
+          <label>Năm xuất bản</label>
+          <input name="publishYear" type="number" value="${escapeHtml(pageState.form.publishYear)}" min="1900" max="2100">
+        </div>
+        <div class="field">
+          <label>Mã ngôn ngữ</label>
+          <input name="languageCode" type="text" value="${escapeHtml(pageState.form.languageCode)}" placeholder="vi">
+        </div>
+        <div class="field">
+          <label>Số trang</label>
+          <input name="pageCount" type="number" value="${escapeHtml(pageState.form.pageCount)}" min="1">
+        </div>
+        <div class="field">
+          <label>Tổng tồn</label>
+          <input name="stockTotal" type="number" value="${escapeHtml(pageState.form.stockTotal)}" min="0">
+        </div>
+        <div class="field">
+          <label>Tồn khả dụng</label>
+          <input name="stockAvailable" type="number" value="${escapeHtml(pageState.form.stockAvailable)}" min="0">
+        </div>
+        <div class="field span-2">
+          <label>Từ khóa</label>
+          <input name="keywords" type="text" value="${escapeHtml(pageState.form.keywords)}" placeholder="java, spring, clean code">
+        </div>
+        <div class="field">
+          <label>Trạng thái</label>
+          <select name="status">
+            ${STATUS_OPTIONS
+              .map((status) => `<option value="${status}" ${pageState.form.status === status ? "selected" : ""}>${status}</option>`)
+              .join("")}
+          </select>
+        </div>
+        <div class="field span-2">
+          <label>Mô tả</label>
+          <textarea name="description" placeholder="Tóm tắt ngắn cho catalog">${escapeHtml(pageState.form.description)}</textarea>
+        </div>
+
+        <div class="book-form-media span-2">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Media trong form sách</p>
+              <h4 class="card-title">Tải ảnh bìa và ebook ngay tại đây</h4>
+            </div>
+          </div>
+          <div class="book-media-grid">
+            <div class="field upload-dropzone">
+              <label>Ảnh bìa</label>
+              <input name="coverFile" type="file" accept=".jpg,.jpeg,.png,.webp,image/*">
+              <p class="mini">Nếu tải lên, file này sẽ được đánh dấu là ảnh bìa chính.</p>
+            </div>
+            <div class="field upload-dropzone">
+              <label>File bổ sung</label>
+              <input name="resourceFiles" type="file" accept=".jpg,.jpeg,.png,.webp,.pdf,.epub" multiple>
+              <p class="mini">Có thể đính kèm PDF, ebook hoặc ảnh minh họa ngay trong form tạo và sửa sách.</p>
+            </div>
+          </div>
+
+          ${pageState.form.id
+            ? `
+              <div class="book-asset-grid">
+                ${selectedBookMedia.length
+                  ? selectedBookMedia.map(renderMediaAssetCard).join("")
+                  : '<div class="empty-state">Lưu sách trước rồi thêm ảnh bìa hoặc file tại đây.</div>'}
               </div>
-              <div class="book-media-grid">
-                <div class="field upload-dropzone">
-                  <label>Ảnh bìa</label>
-                  <input name="coverFile" type="file" accept=".jpg,.jpeg,.png,.webp,image/*">
-                  <p class="mini">Dùng một ảnh bìa chính. Nếu tải lên, file này sẽ được đánh dấu là media chính.</p>
-                </div>
-                <div class="field upload-dropzone">
-                  <label>File bổ sung</label>
-                  <input name="resourceFiles" type="file" accept=".jpg,.jpeg,.png,.webp,.pdf,.epub" multiple>
-                  <p class="mini">Có thể đính kèm PDF, ebook hoặc ảnh minh họa mà không cần rời khỏi màn hình này.</p>
-                </div>
-              </div>
+            `
+            : '<div class="empty-state">Tạo sách trước, sau đó các file đã chọn sẽ được tải lên ngay sau khi lưu.</div>'}
+        </div>
 
-              ${pageState.form.id
-                ? `
-                  <div class="book-asset-grid">
-                    ${selectedBookMedia.length
-                      ? selectedBookMedia.map(renderAssetCard).join("")
-                      : '<div class="empty-state">Lưu sách trước rồi thêm ảnh bìa hoặc file tại đây.</div>'}
-                  </div>
-                `
-                : '<div class="empty-state">Tạo sách trước, sau đó các file đã chọn sẽ được tải lên ngay sau khi lưu.</div>'}
-            </div>
-
-            <p class="form-message span-2">${escapeHtml(pageState.message || "")}</p>
-            <div class="actions span-2">
-              <button class="btn primary" type="submit">${pageState.form.id ? "Lưu sách và media" : "Tạo sách và upload media"}</button>
-              <button class="btn secondary" type="button" data-action="books-cancel">Xóa nội dung</button>
-            </div>
+        <p class="form-message span-2">${escapeHtml(pageState.message || "")}</p>
+        <div class="actions span-2">
+          <button class="btn primary" type="submit">${pageState.form.id ? "Lưu sách và media" : "Tạo sách và upload media"}</button>
+          <button class="btn secondary" type="button" data-action="books-cancel">Xóa nội dung</button>
+        </div>
       </form>
     </div>
   `;
@@ -448,10 +505,23 @@ export function bindBooksPage({ root, store, pageState, setPageState }) {
   const filterForm = root.querySelector("#books-filter-form");
   const bookForm = root.querySelector("#books-form");
   const formSection = root.querySelector("#books-form-section");
+  const detailSection = root.querySelector("#books-detail-section");
+  const currentPageBooks = store.getBookPage().items;
 
-  if (pageState.scrollTarget === "books-form-section" && formSection) {
+  if (pageState.scrollTarget) {
     window.requestAnimationFrame(() => {
-      formSection.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (pageState.scrollTarget === "books-form-section") {
+        scrollToElement(formSection);
+      } else if (pageState.scrollTarget === "books-detail-section") {
+        scrollToElement(detailSection, { extraOffset: 12 });
+      } else if (pageState.scrollTarget.startsWith("book-row-")) {
+        const row = root.querySelector(`#${pageState.scrollTarget}`);
+
+        if (!scrollToElement(row, { extraOffset: 12 })) {
+          scrollToElement(detailSection, { extraOffset: 12 });
+        }
+      }
+
       pageState.scrollTarget = "";
     });
   }
@@ -511,12 +581,12 @@ export function bindBooksPage({ root, store, pageState, setPageState }) {
             file: coverFile,
             primary: true
           });
-          uploadMessages.push("Đã tải ảnh bìa");
+          uploadMessages.push("đã tải ảnh bìa");
         } catch (error) {
           setPageState(
             {
               selectedId: savedBook?.id || null,
-              message: `Sách đã được lưu, nhưng upload ảnh bìa thất bại: ${error.message || "Không thể upload media."}`
+              message: `Sách đã được lưu nhưng upload ảnh bìa thất bại: ${error.message || "Không thể upload media."}`
             },
             { reload: true }
           );
@@ -533,12 +603,12 @@ export function bindBooksPage({ root, store, pageState, setPageState }) {
               primary: false
             });
           }
-          uploadMessages.push(`Đã tải ${resourceFiles.length} tệp đính kèm`);
+          uploadMessages.push(`đã tải ${resourceFiles.length} tệp đính kèm`);
         } catch (error) {
           setPageState(
             {
               selectedId: savedBook?.id || null,
-              message: `Sách đã được lưu, nhưng upload tệp đính kèm thất bại: ${error.message || "Không thể upload media."}`
+              message: `Sách đã được lưu nhưng upload tệp đính kèm thất bại: ${error.message || "Không thể upload media."}`
             },
             { reload: true }
           );
@@ -546,15 +616,14 @@ export function bindBooksPage({ root, store, pageState, setPageState }) {
         }
       }
 
-      const uploadNotice = uploadMessages.length
-        ? ` ${uploadMessages.join(", ")}.`
-        : "";
+      const uploadNotice = uploadMessages.length ? ` Đồng thời ${uploadMessages.join(", ")}.` : "";
 
       setPageState(
         {
           selectedId: savedBook?.id || null,
           form: getDefaultFormValue(),
-          message: `${formData.get("id") ? "Cập nhật sách thành công." : "Tạo sách thành công."}${uploadNotice}`.trim()
+          message: `${formData.get("id") ? "Cập nhật sách thành công." : "Tạo sách thành công."}${uploadNotice}`,
+          scrollTarget: "books-form-section"
         },
         { reload: true }
       );
@@ -600,7 +669,8 @@ export function bindBooksPage({ root, store, pageState, setPageState }) {
       if (action === "books-select") {
         setPageState({
           selectedId: id,
-          message: ""
+          message: "",
+          scrollTarget: "books-detail-section"
         });
       }
 
@@ -630,10 +700,15 @@ export function bindBooksPage({ root, store, pageState, setPageState }) {
 
         try {
           await store.removeBook(id);
+          const nextPage = currentPageBooks.length === 1 && pageState.page > 0
+            ? pageState.page - 1
+            : pageState.page;
           setPageState(
             {
               selectedId: null,
               form: getDefaultFormValue(),
+              page: nextPage,
+              scrollTarget: "",
               message: "Xóa sách thành công."
             },
             { reload: true }

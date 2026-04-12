@@ -2,7 +2,7 @@ import { escapeHtml, formatDate, formatNumber } from "../../../shared/utils/form
 
 export const dashboardMeta = {
   title: "Dashboard",
-  description: "Bảng điều khiển tổng hợp số liệu catalog lấy trực tiếp từ backend."
+  description: "Tổng quan catalog và tồn kho."
 };
 
 function renderMetricList(title, items, labelKey = "label") {
@@ -28,7 +28,7 @@ function renderMetricList(title, items, labelKey = "label") {
                 `
               )
               .join("")
-          : '<div class="empty-state">Chưa có dữ liệu hiển thị.</div>'}
+          : '<div class="empty-state">Chưa có dữ liệu.</div>'}
       </div>
     </div>
   `;
@@ -54,12 +54,54 @@ function renderBookList(title, books, action) {
                       <button class="action-link" type="button" data-action="${action}" data-id="${book.id}">Mở</button>
                     </div>
                     <p class="subtle">${escapeHtml(book.authorNames || "Chưa có tác giả")}</p>
-                    <p class="mini">${escapeHtml(book.primaryCategoryName)} / ${escapeHtml(book.publisherName || "Chưa có NXB")} / ${formatDate(book.createdAt)}</p>
+                    <p class="mini">
+                      ${escapeHtml(book.primaryCategoryName || "Chưa có thể loại")}
+                      / ${escapeHtml(book.publisherName || "Chưa có NXB")}
+                      / ${escapeHtml(formatDate(book.createdAt))}
+                    </p>
                   </div>
                 `
               )
               .join("")
-          : '<div class="empty-state">Chưa có đầu sách phù hợp.</div>'}
+          : '<div class="empty-state">Chưa có đầu sách.</div>'}
+      </div>
+    </div>
+  `;
+}
+
+function renderInventorySummary(dashboard) {
+  return `
+    <div class="table-card">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Tình trạng kho</p>
+          <h3 class="card-title admin-heading">Tồn kho</h3>
+        </div>
+      </div>
+      <div class="stack">
+        <div class="list-item">
+          <div class="list-item-head">
+            <strong>Sách còn trong kho</strong>
+            <span class="pill">${formatNumber(dashboard.inStockBooks)}</span>
+          </div>
+          <p class="subtle">Có thể mượn.</p>
+        </div>
+        <div class="list-item">
+          <div class="list-item-head">
+            <strong>Sách đang hết</strong>
+            <span class="pill">${formatNumber(dashboard.outOfStockBooks)}</span>
+          </div>
+          <p class="subtle">Cần bổ sung.</p>
+        </div>
+        <div class="list-item">
+          <div class="list-item-head">
+            <strong>Thực thể catalog</strong>
+            <span class="pill">
+              ${formatNumber(dashboard.totalAuthors + dashboard.totalCategories + dashboard.totalPublishers)}
+            </span>
+          </div>
+          <p class="subtle">Tổng số dữ liệu liên quan.</p>
+        </div>
       </div>
     </div>
   `;
@@ -69,26 +111,41 @@ export function renderDashboardPage(store) {
   const dashboard = store.getDashboard();
 
   return `
+    <section class="table-card">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Catalog</p>
+          <h2 class="card-title">Dashboard</h2>
+        </div>
+        <div class="actions">
+          <button class="btn secondary" type="button" data-page="books">Sách</button>
+          <button class="btn secondary" type="button" data-page="authors">Tác giả</button>
+          <button class="btn secondary" type="button" data-page="categories">Danh mục</button>
+          <button class="btn primary" type="button" data-page="search">Tìm kiếm</button>
+        </div>
+      </div>
+    </section>
+
     <div class="stats-grid">
       <div class="stat-card">
         <p class="eyebrow">Sách</p>
         <div class="stat-value">${formatNumber(dashboard.totalBooks)}</div>
-        <p class="mini">${formatNumber(dashboard.inStockBooks)} còn trong kho</p>
+        <p class="mini">${formatNumber(dashboard.inStockBooks)} còn sẵn</p>
       </div>
       <div class="stat-card">
         <p class="eyebrow">Tác giả</p>
         <div class="stat-value">${formatNumber(dashboard.totalAuthors)}</div>
-        <p class="mini">Đã liên kết với catalog thật</p>
+        <p class="mini">Tổng số tác giả</p>
       </div>
       <div class="stat-card">
-        <p class="eyebrow">Thể loại</p>
+        <p class="eyebrow">Danh mục</p>
         <div class="stat-value">${formatNumber(dashboard.totalCategories)}</div>
-        <p class="mini">Có đủ nhóm cha và nhóm con</p>
+        <p class="mini">Tổng số danh mục</p>
       </div>
       <div class="stat-card">
         <p class="eyebrow">Nhà xuất bản</p>
         <div class="stat-value">${formatNumber(dashboard.totalPublishers)}</div>
-        <p class="mini">${formatNumber(dashboard.outOfStockBooks)} đầu sách đang hết</p>
+        <p class="mini">Tổng số NXB</p>
       </div>
     </div>
 
@@ -99,28 +156,7 @@ export function renderDashboardPage(store) {
 
     <div class="grid-2">
       ${renderMetricList("Thể loại nổi bật", dashboard.topCategories)}
-      <div class="table-card">
-        <div class="section-head">
-          <div>
-            <p class="eyebrow">Mức độ hoàn thiện</p>
-            <h3 class="card-title admin-heading">Phạm vi backend hiện tại</h3>
-          </div>
-        </div>
-        <div class="stack">
-          <div class="list-item">
-            <strong>Đã nối backend</strong>
-            <p class="subtle admin-copy">Sách, tác giả, thể loại, nhà xuất bản, tìm kiếm, media và dashboard catalog đang chạy bằng API thật.</p>
-          </div>
-          <div class="list-item">
-            <strong>Sẵn sàng cho bước tiếp theo</strong>
-            <p class="subtle admin-copy">Auth, users, circulation, notifications và operations report đã có sẵn khung frontend để nối backend.</p>
-          </div>
-          <div class="list-item">
-            <strong>Dễ demo</strong>
-            <p class="subtle admin-copy">Dashboard này lấy số liệu thật, danh sách thật và cho phép đi thẳng tới các màn chi tiết.</p>
-          </div>
-        </div>
-      </div>
+      ${renderInventorySummary(dashboard)}
     </div>
 
     <div class="grid-2">

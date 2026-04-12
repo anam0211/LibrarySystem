@@ -1,8 +1,9 @@
 import { escapeHtml, formatDate, formatNumber } from "../../../shared/utils/format.js";
+import { scrollToElement } from "../../../shared/utils/scroll.js";
 
 export const categoriesMeta = {
   title: "Danh mục",
-  description: "Quản lý danh mục cha, danh mục con và dữ liệu phân loại thật từ backend."
+  description: "Quản lý cây danh mục và nhóm phân loại sách."
 };
 
 function getDefaultFormValue() {
@@ -33,8 +34,8 @@ export function renderCategoriesPage(store, pageState) {
   return `
     <div class="section-head">
       <div>
-        <p class="eyebrow">Cây danh mục</p>
-        <h2>Quản lý nhóm cha và nhóm con của catalog sách</h2>
+        <p class="eyebrow">Danh mục</p>
+        <h2>Quản lý danh mục theo khu làm việc riêng</h2>
       </div>
       <div class="actions">
         <button class="btn secondary" type="button" data-action="categories-reset">Làm mới form</button>
@@ -43,39 +44,62 @@ export function renderCategoriesPage(store, pageState) {
     </div>
 
     <div class="grid-3">
-      <div class="chip-card"><p class="eyebrow">Tổng danh mục</p><h3 class="card-title">${formatNumber(categories.length)}</h3><p class="subtle">Số nhóm đang có trong taxonomy thật.</p></div>
-      <div class="chip-card"><p class="eyebrow">Danh mục cha</p><h3 class="card-title">${formatNumber(rootCategories.length)}</h3><p class="subtle">Dùng cho điều hướng cấp cao của catalog.</p></div>
-      <div class="chip-card"><p class="eyebrow">Danh mục con</p><h3 class="card-title">${formatNumber(categories.length - rootCategories.length)}</h3><p class="subtle">Dùng cho lọc, drill-down và phân nhóm chi tiết.</p></div>
+      <div class="chip-card"><p class="eyebrow">Tổng danh mục</p><h3 class="card-title">${formatNumber(categories.length)}</h3><p class="subtle">Toàn bộ nhóm phân loại.</p></div>
+      <div class="chip-card"><p class="eyebrow">Danh mục cha</p><h3 class="card-title">${formatNumber(rootCategories.length)}</h3><p class="subtle">Nhóm cấp cao nhất.</p></div>
+      <div class="chip-card"><p class="eyebrow">Danh mục con</p><h3 class="card-title">${formatNumber(categories.length - rootCategories.length)}</h3><p class="subtle">Nhóm chi tiết bên dưới.</p></div>
     </div>
 
-    <div class="grid-2 workspace-grid">
-      <div class="table-card">
-        <div class="section-head">
+    <div class="entity-admin-stack">
+      <details class="table-card accordion-card" open>
+        <summary class="accordion-summary">
           <div>
-            <p class="eyebrow">Sơ đồ danh mục</p>
-            <h3 class="card-title">Chọn một danh mục để xem chi tiết</h3>
+            <p class="eyebrow">Danh sách danh mục</p>
+            <h3 class="card-title">Chọn một dòng để xem chi tiết</h3>
           </div>
+          <span class="accordion-icon" aria-hidden="true"></span>
+        </summary>
+        <div class="accordion-content">
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Danh mục</th>
+                <th>Danh mục cha</th>
+                <th>Sách</th>
+                <th>Nhóm con</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${categories.length
+                ? categories.map((category) => `
+                    <tr
+                      class="record-row ${selectedCategory?.id === category.id ? "row-selected" : ""}"
+                      data-action="categories-select"
+                      data-id="${category.id}"
+                      tabindex="0"
+                    >
+                      <td><strong>${escapeHtml(category.name)}</strong></td>
+                      <td>${escapeHtml(category.parentName || "Danh mục gốc")}</td>
+                      <td>${formatNumber(category.bookCount)}</td>
+                      <td>${formatNumber(category.childCount)}</td>
+                    </tr>
+                  `).join("")
+                : '<tr><td colspan="4" class="table-empty">Chưa có danh mục phù hợp.</td></tr>'}
+            </tbody>
+          </table>
         </div>
-        <div class="catalog-grid">
-          ${categories
-            .map(
-              (category) => `
-                <div class="catalog-card ${selectedCategory?.id === category.id ? "is-selected" : ""}" data-action="categories-select" data-id="${category.id}">
-                  <p class="eyebrow">${category.parentId ? `Nhóm con của ${escapeHtml(category.parentName || "-")}` : "Danh mục gốc"}</p>
-                  <h4>${escapeHtml(category.name)}</h4>
-                  <p class="subtle">${formatNumber(category.bookCount)} đầu sách / ${formatNumber(category.childCount)} nhóm con</p>
-                </div>
-              `
-            )
-            .join("")}
         </div>
-      </div>
+      </details>
 
-      <div class="table-card">
+      <div id="categories-detail-section" class="table-card">
         <div class="section-head">
           <div>
             <p class="eyebrow">Chi tiết danh mục</p>
             <h3 class="card-title">${selectedCategory ? escapeHtml(selectedCategory.name) : "Chưa chọn danh mục"}</h3>
+          </div>
+          <div class="actions">
+            <button class="btn secondary" type="button" data-action="categories-edit" data-id="${selectedCategory?.id || ""}" ${selectedCategory ? "" : "disabled"}>Sửa</button>
+            <button class="action-link danger" type="button" data-action="categories-delete" data-id="${selectedCategory?.id || ""}" ${selectedCategory ? "" : "disabled"}>Xóa</button>
           </div>
         </div>
         ${selectedCategory
@@ -88,20 +112,12 @@ export function renderCategoriesPage(store, pageState) {
             </div>
             <div class="stack detail-stack">
               <div class="chip-card">
-                <h4>Gợi ý sử dụng</h4>
-                <p class="subtle">${selectedCategory.parentId ? "Phù hợp cho bộ lọc chi tiết, breadcrumb hoặc danh sách drill-down." : "Phù hợp làm nhóm điều hướng cấp cao trên trang chủ và các landing section."}</p>
-              </div>
-              <div class="chip-card">
                 <h4>Sách liên quan</h4>
                 <p class="subtle">${escapeHtml(relatedBooks.map((book) => book.title).join(", ") || "Chưa có sách liên kết.")}</p>
               </div>
-              <div class="actions">
-                <button class="action-link" type="button" data-action="categories-edit" data-id="${selectedCategory.id}">Sửa</button>
-                <button class="action-link danger" type="button" data-action="categories-delete" data-id="${selectedCategory.id}">Xóa</button>
-              </div>
             </div>
           `
-          : '<p class="subtle section-copy">Chọn một danh mục để xem thông tin phân loại chi tiết.</p>'}
+          : '<p class="subtle section-copy">Chọn một danh mục để xem chi tiết và thao tác.</p>'}
       </div>
     </div>
 
@@ -143,13 +159,38 @@ export function renderCategoriesPage(store, pageState) {
 export function bindCategoriesPage({ root, store, pageState, setPageState }) {
   const form = root.querySelector("#categories-form");
   const formSection = root.querySelector("#categories-form-section");
+  const detailSection = root.querySelector("#categories-detail-section");
 
-  if (pageState?.scrollTarget === "categories-form-section" && formSection) {
+  if (pageState.scrollTarget) {
     window.requestAnimationFrame(() => {
-      formSection.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (pageState.scrollTarget === "categories-form-section") {
+        scrollToElement(formSection);
+      }
+
+      if (pageState.scrollTarget === "categories-detail-section") {
+        scrollToElement(detailSection, { extraOffset: 12 });
+      }
+
       pageState.scrollTarget = "";
     });
   }
+
+  root.querySelectorAll('[data-action="categories-select"]').forEach((row) => {
+    row.addEventListener("click", () => {
+      setPageState({
+        selectedId: Number(row.dataset.id),
+        message: "",
+        scrollTarget: "categories-detail-section"
+      });
+    });
+
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        row.click();
+      }
+    });
+  });
 
   form?.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -166,13 +207,15 @@ export function bindCategoriesPage({ root, store, pageState, setPageState }) {
         {
           selectedId: savedCategory?.id || null,
           form: getDefaultFormValue(),
-          message: formData.get("id") ? "Cập nhật danh mục thành công." : "Tạo danh mục thành công."
+          message: formData.get("id") ? "Cập nhật danh mục thành công." : "Tạo danh mục thành công.",
+          scrollTarget: "categories-form-section"
         },
         { reload: true }
       );
     } catch (error) {
       setPageState({
-        message: error.message || "Không thể lưu danh mục."
+        message: error.message || "Không thể lưu danh mục.",
+        scrollTarget: "categories-form-section"
       });
     }
   });
@@ -187,13 +230,6 @@ export function bindCategoriesPage({ root, store, pageState, setPageState }) {
           form: getDefaultFormValue(),
           message: "",
           scrollTarget: "categories-form-section"
-        });
-      }
-
-      if (action === "categories-select") {
-        setPageState({
-          selectedId: id,
-          message: ""
         });
       }
 
@@ -229,13 +265,15 @@ export function bindCategoriesPage({ root, store, pageState, setPageState }) {
             {
               selectedId: null,
               form: getDefaultFormValue(),
-              message: "Xóa danh mục thành công."
+              message: "Xóa danh mục thành công.",
+              scrollTarget: "categories-detail-section"
             },
             { reload: true }
           );
         } catch (error) {
           setPageState({
-            message: error.message || "Không thể xóa danh mục."
+            message: error.message || "Không thể xóa danh mục.",
+            scrollTarget: "categories-detail-section"
           });
         }
       }

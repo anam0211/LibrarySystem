@@ -1,8 +1,12 @@
 import { API_BASE_URL } from "../../../config/api.js";
+import { getAuthorizationHeaders } from "../../../core/http/auth-token.js";
 
 async function request(path, options = {}) {
   try {
-    const response = await fetch(`${API_BASE_URL}${path}`, options);
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      headers: getAuthorizationHeaders(options.headers || {})
+    });
     const contentType = response.headers.get("content-type") || "";
     const payload = contentType.includes("application/json")
       ? await response.json()
@@ -21,7 +25,7 @@ async function request(path, options = {}) {
       : payload;
   } catch (error) {
     if (error instanceof TypeError) {
-      throw new Error(`Khong the ket noi backend tai ${API_BASE_URL}. Hay kiem tra server backend va CORS upload media.`);
+      throw new Error(`Không thể kết nối backend tại ${API_BASE_URL}. Hãy kiểm tra server backend và cấu hình CORS cho upload media.`);
     }
 
     throw error;

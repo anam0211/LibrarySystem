@@ -1,8 +1,9 @@
-import { escapeHtml, formatDate, formatNumber, truncate } from "../../../shared/utils/format.js";
+import { escapeHtml, formatNumber, truncate } from "../../../shared/utils/format.js";
+import { scrollToElement } from "../../../shared/utils/scroll.js";
 
 export const homeMeta = {
   title: "Trang chủ",
-  description: "Trang công khai của thư viện với bộ lọc, danh mục, tác giả và kho sách phân trang."
+  description: "Tra cứu sách công khai."
 };
 
 export function createHomePageState() {
@@ -53,7 +54,7 @@ function renderHeroBook(book, index) {
           : '<div class="showcase-fallback">Không có bìa</div>'}
       </div>
       <div class="hero-book-body">
-        <p class="eyebrow">${escapeHtml(book.primaryCategoryName || "Danh mục")}</p>
+        <p class="eyebrow">${escapeHtml(book.primaryCategoryName || "Thể loại")}</p>
         <strong>${escapeHtml(book.title)}</strong>
         <p class="mini">${escapeHtml(book.authorNames || "Chưa có tác giả")}</p>
       </div>
@@ -71,7 +72,7 @@ function renderCatalogBook(book) {
       </div>
       <div class="showcase-body">
         <div class="showcase-badges">
-          <span class="pill">${escapeHtml(book.primaryCategoryName || "Danh mục")}</span>
+          <span class="pill">${escapeHtml(book.primaryCategoryName || "Thể loại")}</span>
           <span class="pill">${formatNumber(book.stockAvailable)} còn</span>
         </div>
         <h3>${escapeHtml(book.title)}</h3>
@@ -84,28 +85,204 @@ function renderCatalogBook(book) {
   `;
 }
 
-function renderCategorySpotlight(entry) {
-  const name = entry.categoryName || entry.name || "Danh mục";
-  const count = Number(entry.bookCount || entry.totalBooks || entry.count || 0);
-
+function renderShortcutCard({ eyebrow, title, value, unit, action, actionLabel }) {
   return `
-    <article class="category-spotlight-card">
-      <p class="eyebrow">Danh mục</p>
-      <h3>${escapeHtml(name)}</h3>
-      <p class="subtle">${formatNumber(count)} đầu sách trong kho catalog.</p>
+    <article class="shortcut-card">
+      <p class="eyebrow">${escapeHtml(eyebrow)}</p>
+      <strong>${escapeHtml(title)}</strong>
+      <p class="shortcut-value">${formatNumber(value)}</p>
+      <p class="mini">${escapeHtml(unit)}</p>
+      <button class="action-link" type="button" data-action="${escapeHtml(action)}">${escapeHtml(actionLabel)}</button>
     </article>
   `;
 }
 
-function renderAuthorInsight(entry) {
-  const name = entry.authorName || entry.name || "Tác giả";
-  const count = Number(entry.bookCount || entry.totalBooks || entry.count || 0);
+function findNamedItem(items, id) {
+  return items.find((item) => String(item.id) === String(id)) || null;
+}
+
+function createHomeResetState(overrides = {}) {
+  return {
+    keyword: "",
+    authorId: "",
+    categoryId: "",
+    publisherId: "",
+    publishYear: "",
+    available: "",
+    page: 0,
+    size: 8,
+    message: "",
+    searchToolbarOpen: false,
+    filterPanelOpen: false,
+    scrollTarget: "",
+    detailOpen: false,
+    selectedBook: null,
+    ...overrides
+  };
+}
+
+function renderTrailSeparator() {
+  return `<span class="public-filter-trail-separator" aria-hidden="true">/</span>`;
+}
+
+function renderHomeFilterTrail(store, pageState) {
+  const category = pageState.categoryId ? findNamedItem(store.getCategories(), pageState.categoryId) : null;
+  const author = pageState.authorId ? findNamedItem(store.getAuthors(), pageState.authorId) : null;
+
+  if (!category && !author) {
+    return "";
+  }
+
+  const segments = [
+    `
+      <button class="public-filter-trail-link is-root" type="button" data-page="home">
+        <span>Trang chu</span>
+      </button>
+    `
+  ];
+
+  if (category) {
+    segments.push(renderTrailSeparator());
+    segments.push('<span class="public-filter-trail-label">Danh muc</span>');
+    segments.push(renderTrailSeparator());
+    segments.push(`
+      <button
+        class="public-filter-trail-link"
+        type="button"
+        data-action="home-crumb-category"
+        data-category-id="${category.id}"
+      >
+        ${escapeHtml(category.name)}
+      </button>
+    `);
+  }
+
+  if (author) {
+    segments.push(renderTrailSeparator());
+    segments.push('<span class="public-filter-trail-label">Tac gia</span>');
+    segments.push(renderTrailSeparator());
+    segments.push(`
+      <button
+        class="public-filter-trail-link ${category ? "is-current" : ""}"
+        type="button"
+        data-action="home-crumb-author"
+        data-author-id="${author.id}"
+        data-category-id="${category?.id || ""}"
+      >
+        ${escapeHtml(author.name)}
+      </button>
+    `);
+  }
 
   return `
-    <div class="list-item">
-      <strong>${escapeHtml(name)}</strong>
-      <p class="subtle">${formatNumber(count)} sách đang xuất hiện trong khu vực nổi bật.</p>
-    </div>
+    <nav class="public-filter-trail" aria-label="Điều hướng bộ lọc">
+      ${segments.join("")}
+    </nav>
+  `;
+}
+
+function getAvailabilityLabel(value) {
+  if (value === "true") {
+    return "Còn sách";
+  }
+
+  if (value === "false") {
+    return "Hết sách";
+  }
+
+  return "";
+}
+
+function getAppliedHomeFilters(store, pageState) {
+  const filters = [];
+  const category = pageState.categoryId ? findNamedItem(store.getCategories(), pageState.categoryId) : null;
+  const author = pageState.authorId ? findNamedItem(store.getAuthors(), pageState.authorId) : null;
+  const publisher = pageState.publisherId ? findNamedItem(store.getPublishers(), pageState.publisherId) : null;
+  const availabilityLabel = getAvailabilityLabel(pageState.available);
+
+  if (pageState.keyword) {
+    filters.push({
+      key: "keyword",
+      label: "Từ khóa",
+      value: pageState.keyword
+    });
+  }
+
+  if (category) {
+    filters.push({
+      key: "categoryId",
+      label: "Danh mục",
+      value: category.name
+    });
+  }
+
+  if (author) {
+    filters.push({
+      key: "authorId",
+      label: "Tác giả",
+      value: author.name
+    });
+  }
+
+  if (publisher) {
+    filters.push({
+      key: "publisherId",
+      label: "Nhà xuất bản",
+      value: publisher.name
+    });
+  }
+
+  if (pageState.publishYear) {
+    filters.push({
+      key: "publishYear",
+      label: "Năm xuất bản",
+      value: pageState.publishYear
+    });
+  }
+
+  if (availabilityLabel) {
+    filters.push({
+      key: "available",
+      label: "Tình trạng",
+      value: availabilityLabel
+    });
+  }
+
+  return filters;
+}
+
+function renderHomeAppliedFilters(store, pageState) {
+  const filters = getAppliedHomeFilters(store, pageState);
+
+  if (!filters.length) {
+    return "";
+  }
+
+  return `
+    <section class="public-active-filter-panel" aria-label="Bộ lọc áp dụng">
+      <div class="public-active-filter-head">
+        <h3 class="public-active-filter-title">Đang lọc theo</h3>
+        <button class="public-active-filter-clear" type="button" data-action="home-reset-search">Bỏ chọn tất cả</button>
+      </div>
+      <div class="public-active-filter-list">
+        ${filters
+          .map(
+            (filter) => `
+              <button
+                class="public-active-filter-chip"
+                type="button"
+                data-action="home-remove-filter"
+                data-filter-key="${escapeHtml(filter.key)}"
+              >
+                <span class="public-active-filter-chip-label">${escapeHtml(filter.label)}:</span>
+                <span>${escapeHtml(filter.value)}</span>
+                <span class="public-active-filter-chip-remove" aria-hidden="true">&times;</span>
+              </button>
+            `
+          )
+          .join("")}
+      </div>
+    </section>
   `;
 }
 
@@ -121,9 +298,8 @@ export function renderHomeNavbarToolbar(store, pageState) {
             name="keyword"
             type="text"
             value="${escapeHtml(pageState.keyword)}"
-            placeholder="Tìm tên sách, ISBN, từ khóa..."
+            placeholder="Tìm tên sách, ISBN hoặc từ khóa..."
           >
-          <button class="btn primary public-search-submit" type="submit">Tìm</button>
           <button
             class="public-filter-toggle ${pageState.filterPanelOpen ? "active" : ""}"
             type="button"
@@ -134,6 +310,7 @@ export function renderHomeNavbarToolbar(store, pageState) {
             <span class="public-filter-icon" aria-hidden="true"></span>
             <span class="sr-only">Mở bộ lọc</span>
           </button>
+          <button class="btn primary public-search-submit" type="submit">Tìm</button>
         </div>
 
         <div id="home-navbar-filter-panel" class="public-filter-panel ${pageState.filterPanelOpen ? "is-open" : ""}">
@@ -182,49 +359,46 @@ export function renderHomePage(store, pageState) {
   const featuredBooks = dashboard.featuredBooks.slice(0, 4);
   const newestBooks = dashboard.newestBooks.slice(0, 4);
   const heroBooks = (featuredBooks.length ? featuredBooks : newestBooks).slice(0, 3);
-  const categories = store.getCategories();
   const result = store.getSearchResult();
   const activeSearch = hasSearchFilters(pageState);
-  const categorySpotlight = (dashboard.booksByCategory?.length ? dashboard.booksByCategory : categories).slice(0, 4);
-  const topAuthors = (dashboard.topAuthors || []).slice(0, 3);
   const catalogPage = activeSearch ? result.page : store.getBookPage();
-  const catalogTitle = activeSearch ? "Kết quả tìm kiếm" : "Tất cả sách";
+  const catalogTitle = activeSearch ? "Kết quả tìm kiếm" : "Kho sách";
   const catalogSubtitle = activeSearch
-    ? `${formatNumber(catalogPage.totalItems)} đầu sách phù hợp với bộ lọc hiện tại.`
-    : `${formatNumber(catalogPage.totalItems)} đầu sách trong kho sách công khai.`;
+    ? `${formatNumber(catalogPage.totalItems)} đầu sách phù hợp.`
+    : `${formatNumber(catalogPage.totalItems)} đầu sách đang hiển thị.`;
 
   return `
     <section class="storefront-hero">
       <div class="storefront-hero-copy">
         <p class="eyebrow">Thư viện điện tử</p>
-        <h1>Tra cứu sách nhanh theo danh mục và từ khóa</h1>
-        <p class="subtle">Trang chủ hiển thị toàn bộ sách theo phân trang, có khu nổi bật và đi thẳng tới trang chi tiết sách công khai.</p>
+        <h1>Tìm sách trong thư viện</h1>
+        <p class="subtle">Tra cứu theo tên sách, tác giả, thể loại hoặc nhà xuất bản.</p>
         <div class="actions">
-          <button class="btn primary" type="button" data-page="reader">Khu vực người dùng</button>
-          <button class="btn secondary" type="button" data-page="login">Đăng nhập admin</button>
+          <button class="btn primary" type="button" data-action="home-scroll-books">Xem kho sách</button>
+          <button class="btn secondary" type="button" data-action="home-scroll-featured">Sách nổi bật</button>
         </div>
         <div class="hero-benefit-row">
           <div class="hero-benefit-card">
             <strong>${formatNumber(dashboard.totalBooks)}</strong>
-            <p class="mini">Tổng đầu sách</p>
+            <p class="mini">Đầu sách</p>
           </div>
           <div class="hero-benefit-card">
             <strong>${formatNumber(dashboard.inStockBooks)}</strong>
-            <p class="mini">Đang còn sẵn</p>
+            <p class="mini">Còn sẵn</p>
           </div>
           <div class="hero-benefit-card">
-            <strong>FTS</strong>
-            <p class="mini">SQL Server / fallback search</p>
+            <strong>${formatNumber(dashboard.totalCategories)}</strong>
+            <p class="mini">Danh mục</p>
           </div>
         </div>
       </div>
 
       <div class="storefront-hero-stage">
-        <div class="hero-stage-badge">Sách mới và đề xuất đọc</div>
+        <div class="hero-stage-badge">Gợi ý đọc nhanh</div>
         <div class="hero-stage-grid">
           ${heroBooks.length
             ? heroBooks.map(renderHeroBook).join("")
-            : '<div class="empty-state">Đang chờ backend trả dữ liệu sách để hiển thị khu vực nổi bật.</div>'}
+            : '<div class="empty-state">Chưa có dữ liệu sách.</div>'}
         </div>
       </div>
     </section>
@@ -239,10 +413,13 @@ export function renderHomePage(store, pageState) {
         </div>
       </div>
 
+      ${renderHomeFilterTrail(store, pageState)}
+      ${renderHomeAppliedFilters(store, pageState)}
+
       <div class="showcase-grid">
         ${catalogPage.items.length
           ? catalogPage.items.map(renderCatalogBook).join("")
-          : '<div class="empty-state">Không tìm thấy sách phù hợp với bộ lọc hiện tại.</div>'}
+          : '<div class="empty-state">Không tìm thấy sách phù hợp.</div>'}
       </div>
 
       <div class="catalog-pagination">
@@ -251,27 +428,54 @@ export function renderHomePage(store, pageState) {
       </div>
     </section>
 
-    <section class="storefront-dark-band">
+    <section class="table-card storefront-panel storefront-shortcuts">
       <div class="section-head">
         <div>
-          <p class="eyebrow">Thống kê nổi bật</p>
-          <h2 class="public-section-title">Chỉ số nhanh từ catalog</h2>
-          <p class="public-section-copy">Tóm tắt nhanh quy mô dữ liệu và các nhóm sách đang hiện diện trên hệ thống.</p>
+          <p class="eyebrow">Lối vào nhanh</p>
+          <h2 class="public-section-title">Khám phá nhanh</h2>
         </div>
       </div>
-      <div class="category-spotlight-grid">
-        ${categorySpotlight.length
-          ? categorySpotlight.map(renderCategorySpotlight).join("")
-          : '<div class="empty-state">Chưa có thống kê thể loại từ backend.</div>'}
+      <div class="shortcut-grid">
+        ${renderShortcutCard({
+          eyebrow: "Kho sách",
+          title: "Tất cả đầu sách",
+          value: dashboard.totalBooks,
+          unit: "đầu sách",
+          action: "home-scroll-books",
+          actionLabel: "Mở kho sách"
+        })}
+        ${renderShortcutCard({
+          eyebrow: "Nổi bật",
+          title: "Sách nổi bật",
+          value: featuredBooks.length,
+          unit: "mục hiển thị",
+          action: "home-scroll-featured",
+          actionLabel: "Xem mục này"
+        })}
+        ${renderShortcutCard({
+          eyebrow: "Cập nhật",
+          title: "Sách mới",
+          value: newestBooks.length,
+          unit: "mục mới",
+          action: "home-scroll-newest",
+          actionLabel: "Xem cập nhật"
+        })}
+        ${renderShortcutCard({
+          eyebrow: "Bộ lọc",
+          title: "Danh mục",
+          value: dashboard.totalCategories,
+          unit: "danh mục",
+          action: "home-toggle-search-toolbar",
+          actionLabel: "Mở bộ lọc"
+        })}
       </div>
     </section>
 
-    <section class="table-card storefront-panel">
+    <section id="home-featured-books" class="table-card storefront-panel">
       <div class="section-head">
         <div>
-          <p class="eyebrow">Sách nổi bật</p>
-          <h2 class="public-section-title">Gợi ý đọc trên trang chủ</h2>
-          <p class="public-section-copy">Những đầu sách nên xuất hiện ở khu vực giới thiệu nhanh cho người dùng mới.</p>
+          <p class="eyebrow">Nổi bật</p>
+          <h2 class="public-section-title">Sách nổi bật</h2>
         </div>
       </div>
       <div class="showcase-grid">
@@ -281,11 +485,11 @@ export function renderHomePage(store, pageState) {
       </div>
     </section>
 
-    <section class="table-card storefront-panel">
+    <section id="home-newest-books" class="table-card storefront-panel">
       <div class="section-head">
         <div>
-          <p class="eyebrow">Sách mới</p>
-          <h2 class="public-section-title">Cập nhật gần đây từ catalog</h2>
+          <p class="eyebrow">Mới cập nhật</p>
+          <h2 class="public-section-title">Sách mới</h2>
         </div>
       </div>
       <div class="showcase-grid">
@@ -294,36 +498,18 @@ export function renderHomePage(store, pageState) {
           : '<div class="empty-state">Chưa có dữ liệu sách mới.</div>'}
       </div>
     </section>
-
-    <section class="public-footer-note storefront-note-grid">
-      <div class="list-item">
-        <strong>Thống kê nhanh</strong>
-        <p class="subtle">${formatNumber(dashboard.totalAuthors)} tác giả / ${formatNumber(dashboard.totalPublishers)} nhà xuất bản đã được đồng bộ lên giao diện.</p>
-      </div>
-      <div class="list-item">
-        <strong>Tác giả nổi bật</strong>
-        <div class="stack compact-stack">
-          ${topAuthors.length
-            ? topAuthors.map(renderAuthorInsight).join("")
-            : '<p class="subtle">Đang chờ backend trả dữ liệu top tác giả.</p>'}
-        </div>
-      </div>
-      <div class="list-item">
-        <strong>Lần cập nhật gần nhất</strong>
-        <p class="subtle">${dashboard.newestBooks[0]?.createdAt ? formatDate(dashboard.newestBooks[0].createdAt) : "Đang chờ backend trả dữ liệu."}</p>
-        <p class="subtle">${escapeHtml(categories.slice(0, 6).map((category) => category.name).join(", ") || "Chưa có dữ liệu thể loại.")}</p>
-      </div>
-    </section>
   `;
 }
 
 export function bindHomePage({ root, shellRoot = document, pageState, setPageState }) {
   const form = shellRoot.querySelector("#home-navbar-search-form");
   const discoverySection = root.querySelector("#home-book-discovery");
+  const featuredSection = root.querySelector("#home-featured-books");
+  const newestSection = root.querySelector("#home-newest-books");
 
-  if (pageState.scrollTarget && discoverySection) {
+  if (pageState.scrollTarget) {
     window.requestAnimationFrame(() => {
-      discoverySection.scrollIntoView({ behavior: "smooth", block: "start" });
+      scrollToElement(root.querySelector(`#${pageState.scrollTarget}`));
       pageState.scrollTarget = "";
     });
   }
@@ -421,32 +607,72 @@ export function bindHomePage({ root, shellRoot = document, pageState, setPageSta
 
       if (action === "home-reset-search") {
         setPageState(
-          {
-            keyword: "",
-            authorId: "",
-            categoryId: "",
-            publisherId: "",
-            publishYear: "",
-            available: "",
-            page: 0,
-            size: 8,
-            message: "",
-            searchToolbarOpen: false,
-            filterPanelOpen: false,
-            scrollTarget: "",
-            detailOpen: false,
-            selectedBook: null
-          },
+          createHomeResetState(),
           { reload: true }
         );
       }
 
+      if (action === "home-crumb-category") {
+        setPageState(
+          createHomeResetState({
+            categoryId: String(button.dataset.categoryId || ""),
+            size: Number(pageState.size) || 8,
+            scrollTarget: "home-book-discovery"
+          }),
+          { reload: true }
+        );
+      }
+
+      if (action === "home-crumb-author") {
+        setPageState(
+          createHomeResetState({
+            categoryId: String(button.dataset.categoryId || ""),
+            authorId: String(button.dataset.authorId || ""),
+            size: Number(pageState.size) || 8,
+            scrollTarget: "home-book-discovery"
+          }),
+          { reload: true }
+        );
+      }
+
+      if (action === "home-remove-filter") {
+        const filterKey = String(button.dataset.filterKey || "");
+        const nextState = createHomeResetState({
+          keyword: pageState.keyword,
+          authorId: pageState.authorId,
+          categoryId: pageState.categoryId,
+          publisherId: pageState.publisherId,
+          publishYear: pageState.publishYear,
+          available: pageState.available,
+          size: Number(pageState.size) || 8,
+          scrollTarget: "home-book-discovery"
+        });
+
+        if (filterKey) {
+          nextState[filterKey] = "";
+        }
+
+        setPageState(nextState, { reload: true });
+      }
+
+      if (action === "home-scroll-books") {
+        scrollToElement(discoverySection);
+      }
+
+      if (action === "home-scroll-featured") {
+        scrollToElement(featuredSection);
+      }
+
+      if (action === "home-scroll-newest") {
+        scrollToElement(newestSection);
+      }
+
       if (action === "home-prev-page") {
-        setPageState({ page: Math.max(0, pageState.page - 1) }, { reload: true });
+        setPageState({ page: Math.max(0, pageState.page - 1), scrollTarget: "home-book-discovery" }, { reload: true });
       }
 
       if (action === "home-next-page") {
-        setPageState({ page: pageState.page + 1 }, { reload: true });
+        setPageState({ page: pageState.page + 1, scrollTarget: "home-book-discovery" }, { reload: true });
       }
     });
   });

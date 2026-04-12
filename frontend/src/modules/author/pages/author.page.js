@@ -1,8 +1,9 @@
 import { escapeHtml, formatDate, formatNumber, truncate } from "../../../shared/utils/format.js";
+import { scrollToElement } from "../../../shared/utils/scroll.js";
 
 export const authorsMeta = {
-  title: "Tac gia",
-  description: "Quan ly ho so tac gia dang lien ket truc tiep voi du lieu sach."
+  title: "Tác giả",
+  description: "Quản lý hồ sơ tác giả và liên kết sách trong catalog."
 };
 
 function getDefaultFormValue() {
@@ -35,111 +36,122 @@ export function renderAuthorsPage(store, pageState) {
   return `
     <div class="section-head">
       <div>
-        <p class="eyebrow">Ho so tac gia</p>
-        <h2>Quan ly tac gia dang lien ket truc tiep voi du lieu sach</h2>
+        <p class="eyebrow">Tác giả</p>
+        <h2>Quản lý tác giả theo khu làm việc riêng</h2>
       </div>
       <div class="actions">
-        <button class="btn secondary" type="button" data-action="authors-clear-search">Xoa tim kiem</button>
-        <button class="btn primary" type="button" data-action="authors-new">Tao tac gia</button>
+        <button class="btn secondary" type="button" data-action="authors-clear-search">Xóa tìm kiếm</button>
+        <button class="btn primary" type="button" data-action="authors-new">Tạo tác giả</button>
       </div>
     </div>
 
     <div class="grid-3">
-      <div class="chip-card"><p class="eyebrow">Tong tac gia</p><h3 class="card-title">${formatNumber(authors.length)}</h3><p class="subtle">So ban ghi dang tra ve tu backend.</p></div>
-      <div class="chip-card"><p class="eyebrow">Co tieu su</p><h3 class="card-title">${formatNumber(authors.filter((author) => author.bio).length)}</h3><p class="subtle">San sang cho trang chi tiet va tooltip.</p></div>
-      <div class="chip-card"><p class="eyebrow">Lien ket sach</p><h3 class="card-title">${formatNumber(authors.reduce((total, author) => total + author.bookCount, 0))}</h3><p class="subtle">Tong so lien ket giua tac gia va sach.</p></div>
+      <div class="chip-card"><p class="eyebrow">Tổng tác giả</p><h3 class="card-title">${formatNumber(authors.length)}</h3><p class="subtle">Số bản ghi hiện có.</p></div>
+      <div class="chip-card"><p class="eyebrow">Có tiểu sử</p><h3 class="card-title">${formatNumber(authors.filter((author) => author.bio).length)}</h3><p class="subtle">Đã có phần mô tả.</p></div>
+      <div class="chip-card"><p class="eyebrow">Liên kết sách</p><h3 class="card-title">${formatNumber(authors.reduce((total, author) => total + author.bookCount, 0))}</h3><p class="subtle">Tổng đầu sách đã gắn tác giả.</p></div>
     </div>
 
-    <div class="grid-2 workspace-grid">
-      <div class="table-card">
-        <div class="section-head">
+    <div class="entity-admin-stack">
+      <details class="table-card accordion-card" open>
+        <summary class="accordion-summary">
           <div>
-            <p class="eyebrow">Danh sach tac gia</p>
-            <h3 class="card-title">Tim va quan ly tac gia</h3>
+            <p class="eyebrow">Danh sách tác giả</p>
+            <h3 class="card-title">Chọn một dòng để xem chi tiết</h3>
           </div>
-        </div>
+          <span class="accordion-icon" aria-hidden="true"></span>
+        </summary>
+        <div class="accordion-content">
         <div class="field">
-          <label for="authors-query">Tim theo ten</label>
-          <input id="authors-query" type="text" value="${escapeHtml(pageState.query)}" placeholder="Nhap ten tac gia">
+          <label for="authors-query">Tìm theo tên</label>
+          <input id="authors-query" type="text" value="${escapeHtml(pageState.query)}" placeholder="Nhập tên tác giả">
         </div>
         <div class="table-wrap table-spacing">
           <table class="table">
-            <thead><tr><th>Tac gia</th><th>Sach</th><th>Ngay tao</th><th>Thao tac</th></tr></thead>
+            <thead>
+              <tr>
+                <th>Tác giả</th>
+                <th>Sách</th>
+                <th>Ngày tạo</th>
+              </tr>
+            </thead>
             <tbody>
               ${authors.length
                 ? authors
                     .map(
                       (author) => `
-                        <tr class="${selectedAuthor?.id === author.id ? "row-selected" : ""}">
+                        <tr
+                          class="record-row ${selectedAuthor?.id === author.id ? "row-selected" : ""}"
+                          data-action="authors-select"
+                          data-id="${author.id}"
+                          tabindex="0"
+                        >
                           <td><strong>${escapeHtml(author.name)}</strong></td>
                           <td>${formatNumber(author.bookCount)}</td>
                           <td>${formatDate(author.createdAt)}</td>
-                          <td>
-                            <div class="actions">
-                              <button class="action-link" type="button" data-action="authors-select" data-id="${author.id}">Xem</button>
-                              <button class="action-link" type="button" data-action="authors-edit" data-id="${author.id}">Sua</button>
-                              <button class="action-link danger" type="button" data-action="authors-delete" data-id="${author.id}">Xoa</button>
-                            </div>
-                          </td>
                         </tr>
                       `
                     )
                     .join("")
-                : '<tr><td colspan="4" class="table-empty">Khong co tac gia phu hop.</td></tr>'}
+                : '<tr><td colspan="3" class="table-empty">Không có tác giả phù hợp.</td></tr>'}
             </tbody>
           </table>
         </div>
-      </div>
+        </div>
+      </details>
 
-      <div class="table-card">
+      <div id="authors-detail-section" class="table-card">
         <div class="section-head">
           <div>
-            <p class="eyebrow">Chi tiet tac gia</p>
-            <h3 class="card-title">${selectedAuthor ? escapeHtml(selectedAuthor.name) : "Chua chon tac gia"}</h3>
+            <p class="eyebrow">Chi tiết tác giả</p>
+            <h3 class="card-title">${selectedAuthor ? escapeHtml(selectedAuthor.name) : "Chưa chọn tác giả"}</h3>
+          </div>
+          <div class="actions">
+            <button class="btn secondary" type="button" data-action="authors-edit" data-id="${selectedAuthor?.id || ""}" ${selectedAuthor ? "" : "disabled"}>Sửa</button>
+            <button class="action-link danger" type="button" data-action="authors-delete" data-id="${selectedAuthor?.id || ""}" ${selectedAuthor ? "" : "disabled"}>Xóa</button>
           </div>
         </div>
         ${selectedAuthor
           ? `
             <div class="detail-grid">
-              <div class="detail-item"><p class="eyebrow">So sach</p><strong>${formatNumber(selectedAuthor.bookCount)}</strong></div>
-              <div class="detail-item"><p class="eyebrow">Ngay tao</p><strong>${formatDate(selectedAuthor.createdAt)}</strong></div>
+              <div class="detail-item"><p class="eyebrow">Số sách</p><strong>${formatNumber(selectedAuthor.bookCount)}</strong></div>
+              <div class="detail-item"><p class="eyebrow">Ngày tạo</p><strong>${formatDate(selectedAuthor.createdAt)}</strong></div>
             </div>
             <div class="stack detail-stack">
               <div class="chip-card">
-                <h4>Tieu su</h4>
-                <p class="subtle">${escapeHtml(truncate(selectedAuthor.bio || "Chua co tieu su.", 260))}</p>
+                <h4>Tiểu sử</h4>
+                <p class="subtle">${escapeHtml(truncate(selectedAuthor.bio || "Chưa có tiểu sử.", 260))}</p>
               </div>
               <div class="chip-card">
-                <h4>Sach lien quan</h4>
-                <p class="subtle">${escapeHtml(relatedBooks.map((book) => book.title).join(", ") || "Chua co sach lien ket.")}</p>
+                <h4>Sách liên quan</h4>
+                <p class="subtle">${escapeHtml(relatedBooks.map((book) => book.title).join(", ") || "Chưa có sách liên kết.")}</p>
               </div>
             </div>
           `
-          : '<p class="subtle section-copy">Chon mot tac gia de xem du lieu lien ket trong catalog.</p>'}
+          : '<p class="subtle section-copy">Chọn một tác giả để xem chi tiết và thao tác.</p>'}
       </div>
     </div>
 
     <div id="authors-form-section" class="table-card full-width-section">
       <div class="section-head">
         <div>
-          <p class="eyebrow">Form tac gia</p>
-          <h3 class="card-title">${pageState.form.id ? "Cap nhat tac gia" : "Tao tac gia moi"}</h3>
+          <p class="eyebrow">Form tác giả</p>
+          <h3 class="card-title">${pageState.form.id ? "Cập nhật tác giả" : "Tạo tác giả mới"}</h3>
         </div>
       </div>
       <form id="authors-form" class="form-grid form-grid-full">
         <input type="hidden" name="id" value="${pageState.form.id}">
         <div class="field span-2">
-          <label>Ten tac gia</label>
-          <input name="name" type="text" value="${escapeHtml(pageState.form.name)}" placeholder="Nhap ten tac gia" required>
+          <label>Tên tác giả</label>
+          <input name="name" type="text" value="${escapeHtml(pageState.form.name)}" placeholder="Nhập tên tác giả" required>
         </div>
         <div class="field span-2">
-          <label>Tieu su</label>
-          <textarea name="bio" placeholder="Mo ta ngan cho trang chi tiet va khu tim kiem">${escapeHtml(pageState.form.bio)}</textarea>
+          <label>Tiểu sử</label>
+          <textarea name="bio" placeholder="Mô tả ngắn về tác giả">${escapeHtml(pageState.form.bio)}</textarea>
         </div>
         <p class="form-message span-2">${escapeHtml(pageState.message || "")}</p>
         <div class="actions span-2">
-          <button class="btn primary" type="submit">${pageState.form.id ? "Luu thay doi" : "Tao tac gia"}</button>
-          <button class="btn secondary" type="button" data-action="authors-cancel">Xoa noi dung</button>
+          <button class="btn primary" type="submit">${pageState.form.id ? "Lưu thay đổi" : "Tạo tác giả"}</button>
+          <button class="btn secondary" type="button" data-action="authors-cancel">Xóa nội dung</button>
         </div>
       </form>
     </div>
@@ -150,10 +162,18 @@ export function bindAuthorsPage({ root, store, pageState, setPageState }) {
   const searchInput = root.querySelector("#authors-query");
   const form = root.querySelector("#authors-form");
   const formSection = root.querySelector("#authors-form-section");
+  const detailSection = root.querySelector("#authors-detail-section");
 
-  if (pageState?.scrollTarget === "authors-form-section" && formSection) {
+  if (pageState.scrollTarget) {
     window.requestAnimationFrame(() => {
-      formSection.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (pageState.scrollTarget === "authors-form-section") {
+        scrollToElement(formSection);
+      }
+
+      if (pageState.scrollTarget === "authors-detail-section") {
+        scrollToElement(detailSection, { extraOffset: 12 });
+      }
+
       pageState.scrollTarget = "";
     });
   }
@@ -161,6 +181,23 @@ export function bindAuthorsPage({ root, store, pageState, setPageState }) {
   searchInput?.addEventListener("input", (event) => {
     setPageState({
       query: event.target.value
+    });
+  });
+
+  root.querySelectorAll('[data-action="authors-select"]').forEach((row) => {
+    row.addEventListener("click", () => {
+      setPageState({
+        selectedId: Number(row.dataset.id),
+        message: "",
+        scrollTarget: "authors-detail-section"
+      });
+    });
+
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        row.click();
+      }
     });
   });
 
@@ -179,14 +216,14 @@ export function bindAuthorsPage({ root, store, pageState, setPageState }) {
         {
           selectedId: savedAuthor?.id || null,
           form: getDefaultFormValue(),
-          message: formData.get("id") ? "Cap nhat tac gia thanh cong." : "Tao tac gia thanh cong.",
+          message: formData.get("id") ? "Cập nhật tác giả thành công." : "Tạo tác giả thành công.",
           scrollTarget: "authors-form-section"
         },
         { reload: true }
       );
     } catch (error) {
       setPageState({
-        message: error.message || "Khong the luu tac gia.",
+        message: error.message || "Không thể lưu tác giả.",
         scrollTarget: "authors-form-section"
       });
     }
@@ -206,13 +243,6 @@ export function bindAuthorsPage({ root, store, pageState, setPageState }) {
           form: getDefaultFormValue(),
           message: "",
           scrollTarget: "authors-form-section"
-        });
-      }
-
-      if (action === "authors-select") {
-        setPageState({
-          selectedId: id,
-          message: ""
         });
       }
 
@@ -236,7 +266,7 @@ export function bindAuthorsPage({ root, store, pageState, setPageState }) {
       }
 
       if (action === "authors-delete") {
-        const shouldDelete = window.confirm(`Xoa tac gia #${id}?`);
+        const shouldDelete = window.confirm(`Xóa tác giả #${id}?`);
 
         if (!shouldDelete) {
           return;
@@ -248,15 +278,15 @@ export function bindAuthorsPage({ root, store, pageState, setPageState }) {
             {
               selectedId: null,
               form: getDefaultFormValue(),
-              message: "Xoa tac gia thanh cong.",
-              scrollTarget: "authors-form-section"
+              message: "Xóa tác giả thành công.",
+              scrollTarget: "authors-detail-section"
             },
             { reload: true }
           );
         } catch (error) {
           setPageState({
-            message: error.message || "Khong the xoa tac gia.",
-            scrollTarget: "authors-form-section"
+            message: error.message || "Không thể xóa tác giả.",
+            scrollTarget: "authors-detail-section"
           });
         }
       }

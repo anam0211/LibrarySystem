@@ -4,6 +4,9 @@ server:
     context-path: /library
 
 spring:
+  main:
+    allow-bean-definition-overriding: true
+
   datasource:
     url: jdbc:sqlserver://localhost:1433;databaseName=LibraryDB;encrypt=true;trustServerCertificate=true
     username: sa
@@ -18,6 +21,22 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.SQLServerDialect
 
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: your-email@gmail.com
+    password: your-app-password
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+jwt:
+  secret: VmVyeVNlY3JldEtleUZvckxpYnJhcnlNYW5hZ2VtZW50U3lzdGVtQDIwMjQhQCMk
+  expiration: 86400000
+
 app:
   media:
-    upload-dir: d:/LibarySystem/backend/uploads/media
+    upload-dir: "${MEDIA_UPLOAD_DIR:./uploads/media}"

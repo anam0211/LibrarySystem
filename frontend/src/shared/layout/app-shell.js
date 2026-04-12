@@ -2,29 +2,23 @@ import { escapeHtml } from "../utils/format.js";
 
 export const navigationSections = [
   {
-    title: "Catalog, Search & Analytics",
+    title: "Catalog",
     items: [
-      { id: "dashboard", label: "Dashboard", description: "Tổng quan số liệu catalog" },
-      { id: "books", label: "Sách", description: "CRUD sách và upload file ngay trong form" },
-      { id: "authors", label: "Tác giả", description: "Quản lý tác giả liên kết với sách" },
-      { id: "categories", label: "Danh mục", description: "Nhóm cha và nhóm con của catalog" },
-      { id: "publishers", label: "Nhà xuất bản", description: "Đơn vị xuất bản cho từng đầu sách" },
-      { id: "search", label: "Tìm kiếm", description: "Tra cứu nâng cao cho catalog sách" }
+      { id: "dashboard", label: "Dashboard", description: "Số liệu catalog" },
+      { id: "books", label: "Sách", description: "Quản lý đầu sách" },
+      { id: "authors", label: "Tác giả", description: "Danh sách tác giả" },
+      { id: "categories", label: "Danh mục", description: "Nhóm phân loại" },
+      { id: "publishers", label: "Nhà xuất bản", description: "Đơn vị phát hành" },
+      { id: "search", label: "Tìm kiếm", description: "Tra cứu dữ liệu" }
     ]
   },
   {
-    title: "Operations & Users",
+    title: "Hệ thống",
     items: [
-      { id: "users", label: "Người dùng", description: "Khung Auth, RBAC và hồ sơ độc giả" },
-      { id: "circulation", label: "Mượn trả", description: "Khung nghiệp vụ mượn và trả sách" },
-      { id: "notifications", label: "Thông báo", description: "Khung nhắc hạn và lịch gửi" },
-      { id: "operations", label: "Báo cáo vận hành", description: "Khung dashboard vận hành" }
+      { id: "users", label: "Tài khoản", description: "Người dùng, vai trò" },
+      { id: "operations", label: "Báo cáo", description: "Số liệu vận hành" }
     ]
   }
-];
-
-const publicNavigationItems = [
-  { id: "reader", label: "Tài khoản" }
 ];
 
 function getAvatarLabel(name) {
@@ -36,18 +30,6 @@ function getAvatarLabel(name) {
     .join("");
 
   return letters || "BH";
-}
-
-function renderPublicNavigation(activePage) {
-  return publicNavigationItems
-    .map(
-      (item) => `
-        <button class="public-nav-btn ${item.id === activePage ? "active" : ""}" type="button" data-page="${item.id}">
-          ${escapeHtml(item.label)}
-        </button>
-      `
-    )
-    .join("");
 }
 
 function renderHoverMenu({
@@ -128,16 +110,47 @@ function renderNavigation(activePage) {
     .join("");
 }
 
+function renderUserDropdown(isAuthenticated, session) {
+  if (!isAuthenticated || !session) {
+    return `<button class="public-cta-btn" type="button" data-page="login">Đăng nhập</button>`;
+  }
+
+  const avatarLabel = getAvatarLabel(session.name || session.email || "U");
+  const shortName = (session.name || session.email || "Tài khoản").split(" ").pop();
+
+  return `
+    <div class="public-user-menu">
+      <button class="public-user-btn" type="button" aria-label="Tài khoản" aria-haspopup="true" aria-expanded="false">
+        <span class="public-user-avatar">${escapeHtml(avatarLabel)}</span>
+        <span class="public-user-name">${escapeHtml(shortName)}</span>
+        <span class="public-chevron" aria-hidden="true">▾</span>
+      </button>
+      <div class="public-user-panel" role="menu">
+        <div class="public-user-info">
+          <strong>${escapeHtml(session.name || "Người dùng")}</strong>
+          <p class="mini">${escapeHtml(session.email || "")}</p>
+        </div>
+        <hr class="public-user-divider">
+        <button class="public-user-link" type="button" data-page="reader" role="menuitem">Trang cá nhân</button>
+        <button class="public-user-link" type="button" data-page="reader" role="menuitem">Lịch sử mượn</button>
+        <button class="public-user-link danger" type="button" data-action="public-logout" role="menuitem">Đăng xuất</button>
+      </div>
+    </div>
+  `;
+}
+
 export function renderLoginShell() {
   return `
     <div class="auth-shell">
       <section class="auth-panel">
         <div class="auth-brand">
           <span class="auth-logo">BH</span>
-          <div>
-            <p class="eyebrow">BookHub Console</p>
-            <h1>Không gian quản trị thư viện</h1>
-            <p class="subtle">Nhóm catalog đã nối API thật. Nhóm vận hành vẫn giữ sẵn khung để nối backend ở bước tiếp theo.</p>
+          <div class="auth-brand-copy">
+            <p class="eyebrow">BookHub Library</p>
+            <h1>Đăng nhập và đăng ký theo đúng luồng của hệ thống thư viện</h1>
+            <p class="subtle">
+              Một màn xác thực gọn, rõ vai trò và đủ đẹp để làm điểm chạm đầu tiên cho người dùng.
+            </p>
           </div>
         </div>
         <div id="auth-root"></div>
@@ -145,13 +158,24 @@ export function renderLoginShell() {
 
       <aside class="auth-highlight">
         <div class="highlight-card">
-          <p class="eyebrow">Cấu trúc workspace</p>
-          <h2>Một frontend cho hai nhóm chức năng của hệ thống thư viện.</h2>
+          <p class="eyebrow">Trải nghiệm xác thực</p>
+          <h2>Không gian đăng nhập nên vừa rõ nghiệp vụ vừa đủ “ra sản phẩm” để demo tự tin hơn.</h2>
+
+          <div class="auth-highlight-metrics">
+            <div class="auth-highlight-metric">
+              <strong>3 vai trò</strong>
+              <span>Admin, Thủ thư, Độc giả</span>
+            </div>
+            <div class="auth-highlight-metric">
+              <strong>1 luồng</strong>
+              <span>Đăng nhập xong điều hướng theo quyền</span>
+            </div>
+          </div>
+
           <ul class="auth-notes">
-            <li>Catalog, tìm kiếm, media và dashboard đang bám theo API thật của backend.</li>
-            <li>Users, circulation, notifications và operations đã có sẵn khung giao diện để nối tiếp.</li>
-            <li>Mỗi page tách riêng khỏi shell nên thay thế module sau này sẽ không làm vỡ layout.</li>
-            <li>Data layer tập trung giúp việc nối API ổn định và dễ bảo trì hơn.</li>
+            <li>Quản trị viên và thủ thư dùng tài khoản đã seed sẵn trong database.</li>
+            <li>Đăng ký mới tạo tài khoản độc giả và có thể dùng ngay sau khi xác thực.</li>
+            <li>Các API auth vẫn giữ nguyên, nên phần giao diện mới không phá backend hiện tại.</li>
           </ul>
         </div>
       </aside>
@@ -174,7 +198,7 @@ export function renderAppShell({
           <div class="logo">BH</div>
           <div>
             <h1>BookHub Console</h1>
-            <p>Workspace quản trị thư viện</p>
+            <p>Bảng điều khiển thư viện</p>
           </div>
         </div>
 
@@ -187,12 +211,6 @@ export function renderAppShell({
         </div>
 
         ${renderNavigation(activePage)}
-
-        <div class="sidebar-note">
-          <p class="eyebrow">Trạng thái triển khai</p>
-          <h3>Catalog đã dùng backend thật. Khối vận hành sẵn sàng để nối tiếp.</h3>
-          <p class="subtle">Cách tách này giúp bạn demo được ngay hôm nay nhưng vẫn giữ chỗ trống rõ ràng cho sprint backend kế tiếp.</p>
-        </div>
       </aside>
 
       <main class="content">
@@ -218,11 +236,10 @@ export function renderAppShell({
                 name="query"
                 type="text"
                 value="${escapeHtml(quickSearchQuery)}"
-                placeholder="Tìm sách, ISBN, tác giả hoặc danh mục"
+                placeholder="Tìm sách, tác giả, ISBN hoặc thể loại"
               >
               <button class="btn secondary" type="submit">Tìm</button>
             </form>
-            <button class="btn secondary" type="button" data-page="search">Mở tìm kiếm</button>
             <button class="btn primary" type="button" data-action="logout">Đăng xuất</button>
           </div>
         </header>
@@ -239,22 +256,25 @@ export function renderPublicShell({
   activePage,
   pageContent,
   isAuthenticated = false,
+  session = null,
   categoryLinks = [],
   authorLinks = [],
   activeCategoryId = "",
   activeAuthorId = "",
   toolbarContent = ""
 }) {
+  const currentYear = new Date().getFullYear();
+
   return `
     <div class="public-shell">
       <header class="public-topbar">
         <div class="public-navbar">
-          <div class="brand public-brand public-brand-plain">
+          <button class="brand public-brand public-brand-plain" type="button" data-page="home" aria-label="Về trang chủ">
             <div>
               <h1>BOOKHUB</h1>
               <p class="subtle">Library</p>
             </div>
-          </div>
+          </button>
 
           <nav class="public-nav public-nav-main">
             <button class="public-nav-btn ${activePage === "home" ? "active" : ""}" type="button" data-page="home">Trang chủ</button>
@@ -276,7 +296,6 @@ export function renderPublicShell({
               filterPlaceholder: "Lọc tác giả...",
               emptyLabel: "Chưa có tác giả."
             })}
-            ${renderPublicNavigation(activePage)}
           </nav>
 
           <div class="public-nav-tools">
@@ -289,10 +308,7 @@ export function renderPublicShell({
               <span class="public-search-icon" aria-hidden="true"></span>
               <span class="sr-only">Tìm kiếm</span>
             </button>
-            <button class="public-icon-btn" type="button" data-page="reader" aria-label="Tài khoản">Tài khoản</button>
-            <button class="public-cta-btn" type="button" data-page="${isAuthenticated ? "dashboard" : "login"}">
-              ${isAuthenticated ? "Admin" : "Đăng nhập"}
-            </button>
+            ${renderUserDropdown(isAuthenticated, session)}
           </div>
         </div>
 
@@ -306,14 +322,47 @@ export function renderPublicShell({
       </main>
 
       <footer class="public-footer">
-        <div class="public-footer-brand">
-          <strong>BookHub Library</strong>
-          <p class="subtle">Không gian công khai của thư viện với bộ lọc, tìm kiếm, sách mới và khu vực người dùng.</p>
+        <div class="public-footer-grid">
+          <div class="public-footer-brand">
+            <strong class="public-footer-logo">BOOKHUB</strong>
+            <p class="public-footer-copy">Tra cứu sách trực tuyến của thư viện.</p>
+
+            <div class="public-footer-socials">
+              <span class="public-footer-social">f</span>
+              <span class="public-footer-social">yt</span>
+              <span class="public-footer-social">z</span>
+            </div>
+          </div>
+
+          <div class="public-footer-column">
+            <h3 class="public-footer-title">Điều hướng</h3>
+            <div class="public-footer-list">
+              <button class="public-footer-nav" type="button" data-page="home">Trang chủ</button>
+              <button class="public-footer-nav" type="button" data-page="reader">Tài khoản</button>
+              <button class="public-footer-nav" type="button" data-page="${isAuthenticated ? "reader" : "login"}">${isAuthenticated ? "Trang cá nhân" : "Đăng nhập"}</button>
+            </div>
+          </div>
+
+          <div class="public-footer-column">
+            <h3 class="public-footer-title">Liên hệ</h3>
+            <div class="public-footer-list">
+              <span class="public-footer-item">BookHub Library</span>
+              <span class="public-footer-item">Email: support@bookhub.local</span>
+            </div>
+          </div>
+
+          <div class="public-footer-column public-footer-news">
+            <h3 class="public-footer-title">Nhận cập nhật</h3>
+            <div class="public-footer-subscribe">
+              <input type="email" placeholder="Email của bạn" aria-label="Email của bạn">
+              <button class="public-footer-subscribe-btn" type="button">Đăng ký</button>
+            </div>
+          </div>
         </div>
-        <div class="public-footer-links">
-          <button class="action-link" type="button" data-page="home">Trang chủ</button>
-          <button class="action-link" type="button" data-page="reader">Người dùng</button>
-          <button class="action-link" type="button" data-page="${isAuthenticated ? "dashboard" : "login"}">${isAuthenticated ? "Admin" : "Đăng nhập"}</button>
+
+        <div class="public-footer-bottom">
+          <p>© ${currentYear} BookHub Library</p>
+          <p>Tra cứu sách trực tuyến</p>
         </div>
       </footer>
     </div>

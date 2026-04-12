@@ -16,7 +16,7 @@ public interface BookCategoryRepository extends JpaRepository<BookCategory, Book
 
     long countByCategory_Id(Integer categoryId);
 
-    @Modifying
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("delete from BookCategory bc where bc.book.id = :bookId")
     void deleteByBookId(@Param("bookId") Integer bookId);
 

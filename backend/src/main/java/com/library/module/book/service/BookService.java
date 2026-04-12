@@ -1,5 +1,6 @@
 package com.library.module.book.service;
 
+import com.library.common.exception.AppException;
 import com.library.common.exception.BadRequestException;
 import com.library.common.exception.ResourceNotFoundException;
 import com.library.common.response.PagedResult;
@@ -10,18 +11,22 @@ import com.library.module.book.dto.response.BookAuthorItemDTO;
 import com.library.module.book.dto.response.BookCategoryItemDTO;
 import com.library.module.book.dto.response.BookResponseDTO;
 import com.library.module.book.entity.*;
+import com.library.module.book.exception.BookErrorCode;
 import com.library.module.book.repository.BookAuthorRepository;
 import com.library.module.book.repository.BookCategoryRepository;
 import com.library.module.book.repository.BookImageRepository;
+import com.library.module.book.repository.BookLoanReferenceRepository;
 import com.library.module.book.repository.BookRepository;
 import com.library.module.category.entity.Category;
 import com.library.module.category.repository.CategoryRepository;
+import com.library.module.media.service.MediaService;
 import com.library.module.publisher.entity.Publisher;
 import com.library.module.publisher.repository.PublisherRepository;
 import jakarta.transaction.Transactional;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -41,6 +46,8 @@ public class BookService {
     BookAuthorRepository bookAuthorRepository;
     BookCategoryRepository bookCategoryRepository;
     BookImageRepository bookImageRepository;
+    BookLoanReferenceRepository bookLoanReferenceRepository;
+    MediaService mediaService;
 
     public PagedResult<BookResponseDTO> getBooks(
             String keyword,
@@ -133,9 +140,21 @@ public class BookService {
 
     public void delete(Integer id) {
         Book book = getBook(id);
+
+        if (bookLoanReferenceRepository.countLoanItemsByBookId(id) > 0) {
+            throw new AppException(BookErrorCode.BOOK_LINKED_LOAN);
+        }
+
+        mediaService.deleteByBook(id);
         bookAuthorRepository.deleteByBookId(id);
         bookCategoryRepository.deleteByBookId(id);
-        bookRepository.delete(book);
+
+        try {
+            bookRepository.delete(book);
+            bookRepository.flush();
+        } catch (DataIntegrityViolationException exception) {
+            throw new AppException(BookErrorCode.BOOK_LINKED_LOAN);
+        }
     }
 
     public List<BookResponseDTO> getNewestBooks(int limit) {

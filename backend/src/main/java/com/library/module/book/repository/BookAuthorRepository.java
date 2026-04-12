@@ -16,7 +16,7 @@ public interface BookAuthorRepository extends JpaRepository<BookAuthor, BookAuth
 
     long countByAuthor_Id(Integer authorId);
 
-    @Modifying
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("delete from BookAuthor ba where ba.book.id = :bookId")
     void deleteByBookId(@Param("bookId") Integer bookId);
 

@@ -1,43 +1,63 @@
+import { formatNumber } from "../../../shared/utils/format.js";
+
 export const operationsMeta = {
-  title: "Operations Report",
-  description: "Frontend scaffold for borrowing metrics, overdue counts and top readers."
+  title: "Báo cáo vận hành",
+  description: "Tổng hợp nhanh người dùng và chỉ số vận hành cơ bản để theo dõi hệ thống."
 };
 
-export function renderOperationsPage() {
+export function renderOperationsPage(store) {
+  const overview = store.getOperationsOverview();
+
   return `
     <div class="stats-grid">
-      <div class="stat-card"><p class="eyebrow">Top readers</p><div class="stat-value">3</div><p class="mini">Ready for API-driven ranking cards.</p></div>
-      <div class="stat-card"><p class="eyebrow">Borrowing trend</p><div class="stat-value">12w</div><p class="mini">Reserve this block for timeline analytics.</p></div>
-      <div class="stat-card"><p class="eyebrow">Overdue slips</p><div class="stat-value">0</div><p class="mini">Connect to overdue transaction count.</p></div>
-      <div class="stat-card"><p class="eyebrow">Returned today</p><div class="stat-value">0</div><p class="mini">Good candidate for a daily KPI card.</p></div>
+      <div class="stat-card">
+        <p class="eyebrow">Tổng người dùng</p>
+        <div class="stat-value">${formatNumber(overview.totalUsers)}</div>
+        <p class="mini">Toàn bộ tài khoản trong hệ thống.</p>
+      </div>
+      <div class="stat-card">
+        <p class="eyebrow">Đang hoạt động</p>
+        <div class="stat-value">${formatNumber(overview.activeUsers)}</div>
+        <p class="mini">Sẵn sàng tiếp tục sử dụng.</p>
+      </div>
+      <div class="stat-card">
+        <p class="eyebrow">Tạm khóa</p>
+        <div class="stat-value">${formatNumber(overview.suspendedUsers)}</div>
+        <p class="mini">Cần theo dõi hoặc mở lại khi đủ điều kiện.</p>
+      </div>
+      <div class="stat-card">
+        <p class="eyebrow">Quá hạn</p>
+        <div class="stat-value">${formatNumber(overview.overdueRecords)}</div>
+        <p class="mini">Sẽ chính xác hơn khi module mượn trả hoàn thiện.</p>
+      </div>
     </div>
 
     <div class="grid-2">
       <div class="table-card">
         <div class="section-head">
           <div>
-            <p class="eyebrow">Operational dashboard plan</p>
-            <h3 class="card-title">Widgets to wire next</h3>
+            <p class="eyebrow">Vai trò</p>
+            <h3 class="card-title">Phân bổ nhân sự</h3>
           </div>
         </div>
         <div class="stack">
-          <div class="list-item"><strong>Most active readers</strong><p class="subtle">Rank by number of borrow transactions in a chosen date range.</p></div>
-          <div class="list-item"><strong>Borrowing by period</strong><p class="subtle">Line or bar chart for daily, weekly or monthly borrowing volume.</p></div>
-          <div class="list-item"><strong>Overdue monitoring</strong><p class="subtle">Highlight open overdue slips and their severity.</p></div>
+          <div class="list-item"><strong>Admin</strong><p class="subtle">${formatNumber(overview.adminUsers)} tài khoản</p></div>
+          <div class="list-item"><strong>Thủ thư</strong><p class="subtle">${formatNumber(overview.librarianUsers)} tài khoản</p></div>
+          <div class="list-item"><strong>Độc giả</strong><p class="subtle">${formatNumber(overview.readerUsers)} tài khoản</p></div>
         </div>
       </div>
 
       <div class="table-card">
         <div class="section-head">
           <div>
-            <p class="eyebrow">Demo value</p>
-            <h3 class="card-title">Why this page matters</h3>
+            <p class="eyebrow">Vận hành</p>
+            <h3 class="card-title">Chỉ số đang theo dõi</h3>
           </div>
         </div>
         <div class="stack">
-          <div class="list-item"><strong>Fast presentation</strong><p class="subtle">Operations KPIs are easy to explain in the final demo and report.</p></div>
-          <div class="list-item"><strong>Role-driven UX</strong><p class="subtle">Librarians can land here for daily monitoring after authentication is connected.</p></div>
-          <div class="list-item"><strong>Future export</strong><p class="subtle">The layout leaves room for Excel or PDF export actions later.</p></div>
+          <div class="list-item"><strong>Lượt mượn</strong><p class="subtle">${formatNumber(overview.borrowingRecords)} bản ghi hiện có.</p></div>
+          <div class="list-item"><strong>Đã trả hôm nay</strong><p class="subtle">${formatNumber(overview.returnedToday)} lượt trả trong ngày.</p></div>
+          <div class="list-item"><strong>Phiếu quá hạn</strong><p class="subtle">${formatNumber(overview.overdueRecords)} trường hợp cần chú ý.</p></div>
         </div>
       </div>
     </div>

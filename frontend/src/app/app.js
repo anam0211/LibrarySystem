@@ -1,86 +1,235 @@
 import { createAppStore } from "../core/store/app-store.js";
 import { renderLoginShell, renderAppShell, renderPublicShell } from "../shared/layout/app-shell.js";
+import { scrollToTop } from "../shared/utils/scroll.js";
 import { renderLoginPage, bindLoginPage } from "../modules/user/pages/login.page.js";
-import {
-  homeMeta,
-  createHomePageState,
-  renderHomePage,
-  renderHomeNavbarToolbar,
-  bindHomePage
-} from "../modules/public/pages/home.page.js";
-import {
-  bookDetailMeta,
-  createBookDetailPageState,
-  renderBookDetailPage
-} from "../modules/public/pages/book-detail.page.js";
-import { readerMeta, renderReaderPage } from "../modules/public/pages/reader.page.js";
-import { dashboardMeta, renderDashboardPage, bindDashboardPage } from "../modules/dashboard/pages/dashboard.page.js";
-import {
-  booksMeta,
-  createBooksPageState,
-  renderBooksPage,
-  bindBooksPage
-} from "../modules/book/pages/book.page.js";
-import {
-  authorsMeta,
-  createAuthorsPageState,
-  renderAuthorsPage,
-  bindAuthorsPage
-} from "../modules/author/pages/author.page.js";
-import {
-  categoriesMeta,
-  createCategoriesPageState,
-  renderCategoriesPage,
-  bindCategoriesPage
-} from "../modules/category/pages/category.page.js";
-import {
-  publishersMeta,
-  createPublishersPageState,
-  renderPublishersPage,
-  bindPublishersPage
-} from "../modules/publisher/pages/publisher.page.js";
-import {
-  searchMeta,
-  createSearchPageState,
-  renderSearchPage,
-  bindSearchPage
-} from "../modules/search/pages/search.page.js";
-import {
-  mediaMeta,
-  createMediaPageState,
-  renderMediaPage,
-  bindMediaPage
-} from "../modules/media/pages/media.page.js";
-import { usersMeta, renderUsersPage } from "../modules/user/pages/users.page.js";
-import { circulationMeta, renderCirculationPage } from "../modules/circulation/pages/circulation.page.js";
-import { notificationsMeta, renderNotificationsPage } from "../modules/notification/pages/notifications.page.js";
-import { operationsMeta, renderOperationsPage } from "../modules/report/pages/operations.page.js";
+import { renderHomeNavbarToolbar } from "../modules/public/pages/home.page.js";
+import { publicPagePaths, publicPageRegistry, PUBLIC_PAGE_KEYS } from "./page-registry/public-pages.js";
+import { catalogPagePaths, catalogPageRegistry } from "./page-registry/catalog-pages.js";
+import { operationsPagePaths, operationsPageRegistry } from "./page-registry/operations-pages.js";
 
 const DEFAULT_PUBLIC_PAGE = "home";
 const DEFAULT_ADMIN_PAGE = "dashboard";
-const PUBLIC_PAGE_KEYS = new Set(["home", "reader", "bookDetail"]);
+const HOME_PAGE_STORAGE_KEY = "bookhub.home.pageState";
 const PAGE_PATHS = {
-  home: "/",
-  bookDetail: "/book",
-  reader: "/reader",
+  ...publicPagePaths,
   login: "/login",
-  dashboard: "/dashboard",
-  books: "/books",
-  authors: "/authors",
-  categories: "/categories",
-  publishers: "/publishers",
-  search: "/search",
-  media: "/media",
-  users: "/users",
-  circulation: "/circulation",
-  notifications: "/notifications",
-  operations: "/operations"
+  ...catalogPagePaths,
+  ...operationsPagePaths
+};
+const pageRegistry = {
+  ...publicPageRegistry,
+  ...catalogPageRegistry,
+  ...operationsPageRegistry
 };
 const PATH_TO_PAGE = Object.fromEntries(
   Object.entries(PAGE_PATHS).map(([pageKey, path]) => [path, pageKey])
 );
 
 PATH_TO_PAGE["/home"] = "home";
+
+function readStoredPageState(pageKey) {
+  if (pageKey !== "home") {
+    return {};
+  }
+
+  try {
+    const rawValue = window.sessionStorage.getItem(HOME_PAGE_STORAGE_KEY);
+
+    if (!rawValue) {
+      return {};
+    }
+
+    const parsedValue = JSON.parse(rawValue);
+    return parsedValue && typeof parsedValue === "object" ? parsedValue : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeStoredPageState(pageKey, state) {
+  if (pageKey !== "home") {
+    return;
+  }
+
+  const payload = {
+    keyword: String(state.keyword || ""),
+    authorId: String(state.authorId || ""),
+    categoryId: String(state.categoryId || ""),
+    publisherId: String(state.publisherId || ""),
+    publishYear: String(state.publishYear || ""),
+    available: String(state.available || ""),
+    page: Number(state.page || 0),
+    size: Number(state.size || 8)
+  };
+
+  try {
+    window.sessionStorage.setItem(HOME_PAGE_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    // Ignore storage failures in private mode or locked-down browsers.
+  }
+}
+
+function parseOptionalNumber(value) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  const parsedValue = Number(value);
+  return Number.isFinite(parsedValue) ? parsedValue : null;
+}
+
+function parsePositiveNumber(value, fallback) {
+  const parsedValue = Number(value);
+  return Number.isFinite(parsedValue) && parsedValue > 0 ? parsedValue : fallback;
+}
+
+function parseNonNegativeNumber(value, fallback) {
+  const parsedValue = Number(value);
+  return Number.isFinite(parsedValue) && parsedValue >= 0 ? parsedValue : fallback;
+}
+
+function appendSearchParam(params, key, value, fallback = "") {
+  if (value === undefined || value === null || value === "" || value === fallback) {
+    return;
+  }
+
+  params.set(key, String(value));
+}
+
+function readPageStateFromLocation(pageKey) {
+  const params = new URLSearchParams(window.location.search);
+
+  switch (pageKey) {
+    case "home":
+      return {
+        keyword: params.get("keyword") || "",
+        authorId: params.get("authorId") || "",
+        categoryId: params.get("categoryId") || "",
+        publisherId: params.get("publisherId") || "",
+        publishYear: params.get("publishYear") || "",
+        available: params.get("available") || "",
+        page: parseNonNegativeNumber(params.get("page"), 0),
+        size: parsePositiveNumber(params.get("size"), 8)
+      };
+    case "books":
+      return {
+        keyword: params.get("keyword") || "",
+        authorId: params.get("authorId") || "",
+        categoryId: params.get("categoryId") || "",
+        publisherId: params.get("publisherId") || "",
+        available: params.get("available") || "",
+        sortBy: params.get("sortBy") || "createdAt",
+        sortDir: params.get("sortDir") || "desc",
+        page: parseNonNegativeNumber(params.get("page"), 0),
+        size: parsePositiveNumber(params.get("size"), 10),
+        selectedId: parseOptionalNumber(params.get("selected"))
+      };
+    case "authors":
+      return {
+        query: params.get("q") || "",
+        selectedId: parseOptionalNumber(params.get("selected"))
+      };
+    case "categories":
+      return {
+        selectedId: parseOptionalNumber(params.get("selected"))
+      };
+    case "publishers":
+      return {
+        query: params.get("q") || "",
+        selectedId: parseOptionalNumber(params.get("selected"))
+      };
+    case "search":
+      return {
+        keyword: params.get("keyword") || "",
+        authorId: params.get("authorId") || "",
+        categoryId: params.get("categoryId") || "",
+        publisherId: params.get("publisherId") || "",
+        publishYear: params.get("publishYear") || "",
+        available: params.get("available") || "",
+        page: parseNonNegativeNumber(params.get("page"), 0),
+        size: parsePositiveNumber(params.get("size"), 10)
+      };
+    case "users":
+      return {
+        query: params.get("q") || "",
+        status: params.get("status") || "",
+        selectedId: parseOptionalNumber(params.get("selected"))
+      };
+    default:
+      return {};
+  }
+}
+
+function buildSearchParamsForPage(pageKey, state = {}) {
+  const params = new URLSearchParams();
+
+  switch (pageKey) {
+    case "home":
+      appendSearchParam(params, "keyword", state.keyword);
+      appendSearchParam(params, "authorId", state.authorId);
+      appendSearchParam(params, "categoryId", state.categoryId);
+      appendSearchParam(params, "publisherId", state.publisherId);
+      appendSearchParam(params, "publishYear", state.publishYear);
+      appendSearchParam(params, "available", state.available);
+      appendSearchParam(params, "page", state.page, 0);
+      appendSearchParam(params, "size", state.size, 8);
+      break;
+    case "books":
+      appendSearchParam(params, "keyword", state.keyword);
+      appendSearchParam(params, "authorId", state.authorId);
+      appendSearchParam(params, "categoryId", state.categoryId);
+      appendSearchParam(params, "publisherId", state.publisherId);
+      appendSearchParam(params, "available", state.available);
+      appendSearchParam(params, "sortBy", state.sortBy, "createdAt");
+      appendSearchParam(params, "sortDir", state.sortDir, "desc");
+      appendSearchParam(params, "page", state.page, 0);
+      appendSearchParam(params, "size", state.size, 10);
+      appendSearchParam(params, "selected", state.selectedId);
+      break;
+    case "authors":
+      appendSearchParam(params, "q", state.query);
+      appendSearchParam(params, "selected", state.selectedId);
+      break;
+    case "categories":
+      appendSearchParam(params, "selected", state.selectedId);
+      break;
+    case "publishers":
+      appendSearchParam(params, "q", state.query);
+      appendSearchParam(params, "selected", state.selectedId);
+      break;
+    case "search":
+      appendSearchParam(params, "keyword", state.keyword);
+      appendSearchParam(params, "authorId", state.authorId);
+      appendSearchParam(params, "categoryId", state.categoryId);
+      appendSearchParam(params, "publisherId", state.publisherId);
+      appendSearchParam(params, "publishYear", state.publishYear);
+      appendSearchParam(params, "available", state.available);
+      appendSearchParam(params, "page", state.page, 0);
+      appendSearchParam(params, "size", state.size, 10);
+      break;
+    case "users":
+      appendSearchParam(params, "q", state.query);
+      appendSearchParam(params, "status", state.status);
+      appendSearchParam(params, "selected", state.selectedId);
+      break;
+    default:
+      break;
+  }
+
+  return params;
+}
+
+function getDefaultPageForRole(role) {
+  if (role === "READER") {
+    return "reader";
+  }
+
+  if (role === "ADMIN") {
+    return "operations";
+  }
+
+  return DEFAULT_ADMIN_PAGE;
+}
 
 function escapeNotificationHtml(value) {
   return String(value ?? "")
@@ -100,24 +249,17 @@ function resolveNotificationVariant(message) {
 
   if (
     normalizedMessage.includes("thanh cong")
-    || normalizedMessage.includes("thành công")
     || normalizedMessage.includes("da tai")
-    || normalizedMessage.includes("đã tải")
     || normalizedMessage.includes("da luu")
-    || normalizedMessage.includes("đã lưu")
   ) {
     return "success";
   }
 
   if (
     normalizedMessage.includes("khong the")
-    || normalizedMessage.includes("không thể")
     || normalizedMessage.includes("that bai")
-    || normalizedMessage.includes("thất bại")
     || normalizedMessage.includes("loi")
-    || normalizedMessage.includes("lỗi")
     || normalizedMessage.includes("khong tim thay")
-    || normalizedMessage.includes("không tìm thấy")
   ) {
     return "error";
   }
@@ -138,22 +280,11 @@ function renderNotificationCenter(items) {
             <p class="toast-title">${escapeNotificationHtml(item.title)}</p>
             <p class="toast-message">${escapeNotificationHtml(item.message)}</p>
           </div>
-          <button class="toast-close" type="button" data-action="toast-dismiss" data-id="${item.id}" aria-label="Dong thong bao">×</button>
+          <button class="toast-close" type="button" data-action="toast-dismiss" data-id="${item.id}" aria-label="Dong thong bao">x</button>
         </article>
       `).join("")}
     </div>
   `;
-}
-
-function hasSearchFilters(pageState) {
-  return Boolean(
-    pageState.keyword
-    || pageState.authorId
-    || pageState.categoryId
-    || pageState.publisherId
-    || pageState.publishYear
-    || pageState.available !== ""
-  );
 }
 
 function isPublicPage(pageKey) {
@@ -168,205 +299,22 @@ function isAdminPage(pageKey) {
   return !isPublicPage(pageKey) && !isLoginPage(pageKey);
 }
 
-const pageRegistry = {
-  home: {
-    meta: homeMeta,
-    createState: createHomePageState,
-    render: (store, state) => renderHomePage(store, state),
-    bind: bindHomePage,
-    load: async (store, state) => {
-      await Promise.allSettled([
-        store.loadDashboard(),
-        store.loadBooks({
-          page: state.page,
-          size: state.size,
-          sortBy: "createdAt",
-          sortDir: "desc"
-        }),
-        store.loadAuthors(),
-        store.loadCategories(),
-        store.loadPublishers()
-      ]);
-
-      if (hasSearchFilters(state)) {
-        await store.searchBooks({
-          keyword: state.keyword,
-          authorId: state.authorId,
-          categoryId: state.categoryId,
-          publisherId: state.publisherId,
-          publishYear: state.publishYear,
-          available: state.available === "" ? undefined : state.available === "true",
-          page: state.page,
-          size: state.size
-        });
-        return;
-      }
-
-      store.resetSearchResult();
-    }
-  },
-  reader: {
-    meta: readerMeta,
-    render: (store) => renderReaderPage(store),
-    load: async (store) => {
-      await Promise.allSettled([
-        store.loadDashboard(),
-        store.loadCategories()
-      ]);
-    }
-  },
-  bookDetail: {
-    meta: bookDetailMeta,
-    createState: createBookDetailPageState,
-    render: (store, state) => renderBookDetailPage(store, state),
-    load: async (store, state) => {
-      const routeBookId = resolveBookDetailIdFromLocation();
-      const bookId = Number(routeBookId || state.bookId || 0);
-
-      if (!bookId) {
-        throw new Error("Không tìm thấy mã sách hợp lệ.");
-      }
-
-      state.bookId = bookId;
-      await Promise.allSettled([
-        store.loadDashboard(),
-        store.loadAuthors(),
-        store.loadCategories(),
-        store.loadPublishers()
-      ]);
-      await store.loadPublicBookDetail(bookId);
-    }
-  },
-  dashboard: {
-    meta: dashboardMeta,
-    render: (store) => renderDashboardPage(store),
-    bind: bindDashboardPage,
-    load: async (store) => {
-      await store.loadDashboard();
-    }
-  },
-  books: {
-    meta: booksMeta,
-    createState: createBooksPageState,
-    render: (store, state) => renderBooksPage(store, state),
-    bind: bindBooksPage,
-    load: async (store, state) => {
-      await Promise.all([
-        store.loadAuthors(),
-        store.loadCategories(),
-        store.loadPublishers(),
-        store.loadMedia(),
-        store.loadBooks({
-          keyword: state.keyword,
-          authorId: state.authorId,
-          categoryId: state.categoryId,
-          publisherId: state.publisherId,
-          available: state.available === "" ? undefined : state.available === "true",
-          sortBy: state.sortBy,
-          sortDir: state.sortDir,
-          page: state.page,
-          size: state.size
-        })
-      ]);
-    }
-  },
-  authors: {
-    meta: authorsMeta,
-    createState: createAuthorsPageState,
-    render: (store, state) => renderAuthorsPage(store, state),
-    bind: bindAuthorsPage,
-    load: async (store) => {
-      await Promise.all([store.loadAuthors(), store.loadBookOptions()]);
-    }
-  },
-  categories: {
-    meta: categoriesMeta,
-    createState: createCategoriesPageState,
-    render: (store, state) => renderCategoriesPage(store, state),
-    bind: bindCategoriesPage,
-    load: async (store) => {
-      await Promise.all([store.loadCategories(), store.loadBookOptions()]);
-    }
-  },
-  publishers: {
-    meta: publishersMeta,
-    createState: createPublishersPageState,
-    render: (store, state) => renderPublishersPage(store, state),
-    bind: bindPublishersPage,
-    load: async (store) => {
-      await Promise.all([store.loadPublishers(), store.loadBookOptions()]);
-    }
-  },
-  search: {
-    meta: searchMeta,
-    createState: createSearchPageState,
-    render: (store, state) => renderSearchPage(store, state),
-    bind: bindSearchPage,
-    load: async (store, state) => {
-      await Promise.all([store.loadAuthors(), store.loadCategories(), store.loadPublishers()]);
-
-      if (hasSearchFilters(state)) {
-        await store.searchBooks({
-          keyword: state.keyword,
-          authorId: state.authorId,
-          categoryId: state.categoryId,
-          publisherId: state.publisherId,
-          publishYear: state.publishYear,
-          available: state.available === "" ? undefined : state.available === "true",
-          page: state.page,
-          size: state.size
-        });
-        return;
-      }
-
-      store.resetSearchResult();
-    }
-  },
-  media: {
-    meta: mediaMeta,
-    createState: createMediaPageState,
-    render: (store, state) => renderMediaPage(store, state),
-    bind: bindMediaPage,
-    load: async (store) => {
-      await Promise.all([store.loadBookOptions(), store.loadMedia()]);
-    }
-  },
-  users: {
-    meta: usersMeta,
-    render: () => renderUsersPage()
-  },
-  circulation: {
-    meta: circulationMeta,
-    render: () => renderCirculationPage()
-  },
-  notifications: {
-    meta: notificationsMeta,
-    render: () => renderNotificationsPage()
-  },
-  operations: {
-    meta: operationsMeta,
-    render: () => renderOperationsPage()
-  }
-};
-
 function normalizePathname(pathname) {
   const normalized = String(pathname || "").replace(/\/+$/, "");
   return normalized || "/";
 }
 
-function resolveBookDetailIdFromLocation() {
-  const pathname = normalizePathname(window.location.pathname);
-  const match = pathname.match(/^\/book\/(\d+)$/);
-  return match ? Number(match[1]) : null;
-}
-
-function getPathForPage(pageKey, state = {}) {
+function getUrlForPage(pageKey, state = {}) {
   if (pageKey === "bookDetail") {
     const bookId = Number(state?.bookId || 0);
     return bookId ? `/book/${bookId}` : PAGE_PATHS[DEFAULT_PUBLIC_PAGE];
   }
 
-  return PAGE_PATHS[pageKey] || PAGE_PATHS[DEFAULT_PUBLIC_PAGE];
+  const pathname = PAGE_PATHS[pageKey] || PAGE_PATHS[DEFAULT_PUBLIC_PAGE];
+  const params = buildSearchParamsForPage(pageKey, state);
+  const search = params.toString();
+
+  return search ? `${pathname}?${search}` : pathname;
 }
 
 function resolvePageKeyFromLocation() {
@@ -387,14 +335,16 @@ function migrateLegacyHashRoute() {
     return;
   }
 
-  const nextPath = getPathForPage(legacyRoute);
+  const nextPath = getUrlForPage(legacyRoute);
   window.history.replaceState({}, "", nextPath);
 }
 
 function renderPageState(title, message, variant = "loading") {
+  const eyebrow = variant === "error" ? "Co loi" : "Dang tai";
+
   return `
     <div class="page-state-card ${variant === "error" ? "is-error" : ""}">
-      <p class="eyebrow">${variant === "error" ? "Load error" : "Loading"}</p>
+      <p class="eyebrow">${eyebrow}</p>
       <h3>${title}</h3>
       <p class="subtle">${message}</p>
     </div>
@@ -436,7 +386,13 @@ export function initLibraryApp() {
   const pageState = Object.fromEntries(
     Object.entries(pageRegistry)
       .filter(([, config]) => typeof config.createState === "function")
-      .map(([pageKey, config]) => [pageKey, config.createState()])
+      .map(([pageKey, config]) => [
+        pageKey,
+        {
+          ...config.createState(),
+          ...readStoredPageState(pageKey)
+        }
+      ])
   );
   const workspaceState = {
     bootstrapped: false,
@@ -448,6 +404,7 @@ export function initLibraryApp() {
     nextId: 1,
     items: []
   };
+  let pendingPageScroll = "";
 
   migrateLegacyHashRoute();
 
@@ -510,6 +467,23 @@ export function initLibraryApp() {
     render();
   }
 
+  function createCleanHomeState(overrides = {}) {
+    const defaultState = typeof pageRegistry.home?.createState === "function"
+      ? pageRegistry.home.createState()
+      : {};
+
+    return {
+      ...defaultState,
+      message: "",
+      searchToolbarOpen: false,
+      filterPanelOpen: false,
+      scrollTarget: "",
+      detailOpen: false,
+      selectedBook: null,
+      ...overrides
+    };
+  }
+
   function bindGlobalPageButtons() {
     appRoot.querySelectorAll("[data-page]").forEach((button) => {
       button.addEventListener("click", () => {
@@ -517,7 +491,7 @@ export function initLibraryApp() {
           navigateToPage("bookDetail", {
             bookId: Number(button.dataset.bookId || 0),
             message: ""
-          });
+          }, { scrollTop: true });
           return;
         }
 
@@ -558,6 +532,11 @@ export function initLibraryApp() {
             detailOpen: false,
             selectedBook: null
           });
+          return;
+        }
+
+        if (button.dataset.page === "home") {
+          navigateToPage("home", createCleanHomeState(), { scrollTop: true });
           return;
         }
 
@@ -609,7 +588,8 @@ export function initLibraryApp() {
       root: authRoot,
       store,
       onLoginSuccess: async () => {
-        navigateToPage(DEFAULT_ADMIN_PAGE, undefined, { replace: true });
+        const session = store.getSession();
+        navigateToPage(getDefaultPageForRole(session?.role), undefined, { replace: true });
       }
     });
   }
@@ -621,12 +601,12 @@ export function initLibraryApp() {
 
     if (workspaceState.loading) {
       pageContent = renderPageState(
-        `Loading ${pageConfig.meta.title}`,
-        "Please wait while the public pages fetch catalog data."
+        `Dang tai ${pageConfig.meta.title}`,
+        "Vui long cho trong luc he thong lay du lieu catalog."
       );
     } else if (workspaceState.error) {
       pageContent = renderPageState(
-        "Unable to load this page",
+        "Khong the tai trang nay",
         workspaceState.error,
         "error"
       );
@@ -638,6 +618,7 @@ export function initLibraryApp() {
       activePage,
       pageContent,
       isAuthenticated: Boolean(session),
+      session,
       categoryLinks: getPublicCategoryLinks(store.getCategories()),
       authorLinks: getPublicAuthorLinks(store.getAuthors()),
       activeCategoryId: activePage === "home" ? pageState.home?.categoryId || "" : "",
@@ -649,6 +630,27 @@ export function initLibraryApp() {
 
     bindGlobalPageButtons();
     bindNotificationButtons();
+
+    appRoot.querySelector('[data-action="public-logout"]')?.addEventListener("click", () => {
+      store.logout();
+      workspaceState.loading = false;
+      workspaceState.error = "";
+      navigateToPage("home", undefined, { replace: true });
+    });
+
+    const userMenuBtn = appRoot.querySelector(".public-user-btn");
+    const userPanel = appRoot.querySelector(".public-user-panel");
+    if (userMenuBtn && userPanel) {
+      userMenuBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const isOpen = userPanel.classList.toggle("is-open");
+        userMenuBtn.setAttribute("aria-expanded", String(isOpen));
+      });
+      document.addEventListener("click", () => {
+        userPanel.classList.remove("is-open");
+        userMenuBtn.setAttribute("aria-expanded", "false");
+      });
+    }
 
     if (workspaceState.loading || workspaceState.error) {
       return;
@@ -666,6 +668,14 @@ export function initLibraryApp() {
         navigateToPage
       });
     }
+
+    if (pendingPageScroll) {
+      const behavior = pendingPageScroll;
+      pendingPageScroll = "";
+      window.requestAnimationFrame(() => {
+        scrollToTop(behavior);
+      });
+    }
   }
 
   function renderAdminWorkspace(session) {
@@ -675,12 +685,12 @@ export function initLibraryApp() {
 
     if (workspaceState.loading) {
       pageContent = renderPageState(
-        `Loading ${pageConfig.meta.title}`,
-        "Please wait while the frontend fetches the latest backend data."
+        `Dang tai ${pageConfig.meta.title}`,
+        "Vui long cho trong luc he thong dong bo du lieu moi nhat tu backend."
       );
     } else if (workspaceState.error) {
       pageContent = renderPageState(
-        "Unable to load this page",
+        "Khong the tai trang nay",
         workspaceState.error,
         "error"
       );
@@ -742,6 +752,14 @@ export function initLibraryApp() {
         refreshPage: () => loadPage(activePage)
       });
     }
+
+    if (pendingPageScroll) {
+      const behavior = pendingPageScroll;
+      pendingPageScroll = "";
+      window.requestAnimationFrame(() => {
+        scrollToTop(behavior);
+      });
+    }
   }
 
   function render() {
@@ -758,8 +776,8 @@ export function initLibraryApp() {
       return;
     }
 
-    if (session && isLoginPage(activePage)) {
-      navigateToPage(DEFAULT_ADMIN_PAGE, undefined, { replace: true });
+    if (session?.role === "READER" && isAdminPage(activePage)) {
+      navigateToPage("reader", undefined, { replace: true });
       return;
     }
 
@@ -784,9 +802,25 @@ export function initLibraryApp() {
       ...pageState[pageKey],
       ...patch
     };
+    writeStoredPageState(pageKey, pageState[pageKey]);
 
     if (options.reload) {
-      loadPage(pageKey);
+      const activePage = resolvePageKeyFromLocation();
+
+      if (pageKey === activePage) {
+        const nextUrl = getUrlForPage(pageKey, pageState[pageKey]);
+        const currentUrl = `${normalizePathname(window.location.pathname)}${window.location.search}`;
+
+        if (currentUrl !== nextUrl) {
+          if (options.replace) {
+            window.history.replaceState({}, "", nextUrl);
+          } else {
+            window.history.pushState({}, "", nextUrl);
+          }
+        }
+      }
+
+      loadPage(pageKey, { syncFromLocation: false });
       return;
     }
 
@@ -803,11 +837,17 @@ export function initLibraryApp() {
         ...statePatch
       };
       pageState[nextPage] = nextState;
+      writeStoredPageState(nextPage, nextState);
     }
 
-    const nextPath = getPathForPage(nextPage, nextState);
+    const nextPath = getUrlForPage(nextPage, nextState);
+    const currentUrl = `${normalizePathname(window.location.pathname)}${window.location.search}`;
 
-    if (normalizePathname(window.location.pathname) !== normalizePathname(nextPath)) {
+    if (currentUrl !== nextPath) {
+      if (options.scrollTop) {
+        pendingPageScroll = "auto";
+      }
+
       if (options.replace) {
         window.history.replaceState({}, "", nextPath);
       } else {
@@ -815,14 +855,15 @@ export function initLibraryApp() {
       }
     }
 
-    loadPage(nextPage);
+    loadPage(nextPage, { syncFromLocation: false });
   }
 
   function openRecord(pageKey, id) {
     const patches = {
       books: {
         selectedId: id,
-        message: ""
+        message: "",
+        scrollTarget: "books-detail-section"
       },
       authors: {
         selectedId: id,
@@ -857,7 +898,20 @@ export function initLibraryApp() {
     workspaceState.bootstrapped = true;
   }
 
-  async function loadPage(pageKey = resolvePageKeyFromLocation()) {
+  async function loadPage(pageKey = resolvePageKeyFromLocation(), options = {}) {
+    if (options.syncFromLocation && pageState[pageKey]) {
+      const defaultState = typeof pageRegistry[pageKey]?.createState === "function"
+        ? pageRegistry[pageKey].createState()
+        : {};
+
+      pageState[pageKey] = {
+        ...defaultState,
+        ...readStoredPageState(pageKey),
+        ...readPageStateFromLocation(pageKey)
+      };
+      writeStoredPageState(pageKey, pageState[pageKey]);
+    }
+
     const session = store.getSession();
 
     if (!session && isAdminPage(pageKey)) {
@@ -865,12 +919,21 @@ export function initLibraryApp() {
       return;
     }
 
-    if (session && isLoginPage(pageKey)) {
-      navigateToPage(DEFAULT_ADMIN_PAGE, undefined, { replace: true });
+    if (session?.role === "READER" && isAdminPage(pageKey)) {
+      navigateToPage("reader", undefined, { replace: true });
       return;
     }
 
     if (isLoginPage(pageKey)) {
+      if (session) {
+        const validSession = await store.validateSession();
+
+        if (validSession) {
+          navigateToPage(getDefaultPageForRole(store.getSession()?.role), undefined, { replace: true });
+          return;
+        }
+      }
+
       workspaceState.loading = false;
       workspaceState.error = "";
       render();
@@ -892,6 +955,13 @@ export function initLibraryApp() {
         return;
       }
 
+      const validSession = await store.validateSession();
+
+      if (!validSession) {
+        navigateToPage("login", undefined, { replace: true });
+        return;
+      }
+
       await ensureBootstrap();
 
       const pageConfig = pageRegistry[pageKey];
@@ -903,7 +973,7 @@ export function initLibraryApp() {
         return;
       }
 
-      workspaceState.error = error?.message || "Unexpected page load failure.";
+      workspaceState.error = error?.message || "Khong the tai trang hien tai.";
       pushNotification(workspaceState.error, "error", "Tai du lieu that bai");
     } finally {
       if (workspaceState.activeLoadId !== currentLoadId) {
@@ -916,12 +986,12 @@ export function initLibraryApp() {
   }
 
   window.addEventListener("popstate", () => {
-    loadPage(resolvePageKeyFromLocation());
+    loadPage(resolvePageKeyFromLocation(), { syncFromLocation: true });
   });
 
   if (!window.location.pathname || window.location.pathname === "/index.html") {
-    window.history.replaceState({}, "", getPathForPage(DEFAULT_PUBLIC_PAGE));
+    window.history.replaceState({}, "", getUrlForPage(DEFAULT_PUBLIC_PAGE));
   }
 
-  loadPage(resolvePageKeyFromLocation());
+  loadPage(resolvePageKeyFromLocation(), { syncFromLocation: true });
 }
