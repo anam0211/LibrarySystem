@@ -10,7 +10,8 @@ import {
   renderBookDetailPage
 } from "../../modules/public/pages/book-detail.page.js";
 import { readerMeta, renderReaderPage } from "../../modules/public/pages/reader.page.js";
-
+import { bookingMeta, renderBookingPage, bindBookingPage } from "../../modules/public/pages/booking.page.js";
+import { historyMeta, renderHistoryPage, bindHistoryPage, loadHistoryPage } from "../../modules/public/pages/history.page.js";
 function hasSearchFilters(pageState = {}) {
   return Boolean(
     pageState.keyword
@@ -36,7 +37,9 @@ function resolveBookDetailIdFromLocation() {
 export const publicPagePaths = {
   home: "/",
   bookDetail: "/book",
-  reader: "/reader"
+  reader: "/reader",
+  booking: "/booking",
+  history: "/history",
 };
 
 export const publicPageRegistry = {
@@ -82,7 +85,8 @@ export const publicPageRegistry = {
     load: async (store) => {
       await Promise.allSettled([
         store.loadDashboard(),
-        store.loadCategories()
+        store.loadCategories(),
+        (typeof store.loadMyHistory === 'function' ? store.loadMyHistory() : Promise.resolve())
       ]);
     }
   },
@@ -107,6 +111,18 @@ export const publicPageRegistry = {
       ]);
       await store.loadPublicBookDetail(bookId);
     }
+  },
+  booking: {
+    meta: bookingMeta,
+    createState: () => ({ bookId: 0 }),
+    render: (store, state) => renderBookingPage(store, state),
+    bind: (context) => bindBookingPage(context)
+  },
+  history: {
+    meta: historyMeta,
+    render: renderHistoryPage,
+    bind: bindHistoryPage,
+    load: loadHistoryPage   
   }
 };
 

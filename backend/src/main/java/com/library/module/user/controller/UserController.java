@@ -38,6 +38,7 @@ public class UserController {
         
         // Đóng gói thành dạng JSON
         java.util.Map<String, Object> userData = new java.util.HashMap<>();
+        userData.put("id", user.getId());
         userData.put("fullName", user.getFullName());
         userData.put("email", user.getEmail());
         

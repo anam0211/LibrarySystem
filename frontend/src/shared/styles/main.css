@@ -2504,3 +2504,68 @@ strong > a {
 .public-user-link:hover { background: rgba(70,106,133,0.07); }
 .public-user-link.danger { color: var(--danger); }
 .public-user-link.danger:hover { background: rgba(178,58,72,0.07); }
+
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(15, 23, 42, 0.5); 
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease-in-out;
+}
+
+.modal-overlay.is-active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.modal-card {
+  background: #ffffff;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 400px;
+  padding: 24px;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+  transform: translateY(-20px);
+  transition: transform 0.2s ease-in-out;
+}
+
+.modal-overlay.is-active .modal-card {
+  transform: translateY(0);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.modal-close-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  color: #64748b;
+}
+
+.modal-close-btn:hover {
+  color: #0f172a;
+}
+
+.modal-body p {
+  margin-bottom: 12px;
+  color: #334155;
+}

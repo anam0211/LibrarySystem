@@ -4,7 +4,7 @@ import {
   renderUsersPage,
   bindUsersPage
 } from "../../modules/user/pages/users.page.js";
-import { circulationMeta, renderCirculationPage } from "../../modules/circulation/pages/circulation.page.js";
+import { circulationMeta, renderCirculationPage, bindCirculationPage} from "../../modules/circulation/pages/circulation.page.js";
 import { notificationsMeta, renderNotificationsPage } from "../../modules/notification/pages/notifications.page.js";
 import { operationsMeta, renderOperationsPage } from "../../modules/report/pages/operations.page.js";
 
@@ -27,7 +27,11 @@ export const operationsPageRegistry = {
   },
   circulation: {
     meta: circulationMeta,
-    render: () => renderCirculationPage()
+    render: (store) => renderCirculationPage(store),
+    bind: bindCirculationPage,
+    load: async (store) => {
+      await store.loadRecentTransactions(); 
+    }
   },
   notifications: {
     meta: notificationsMeta,

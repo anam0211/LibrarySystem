@@ -97,7 +97,7 @@ export function renderBookDetailPage(store, pageState) {
         </div>
         <div class="actions">
           <button class="btn secondary" type="button" data-page="home">Về trang chủ</button>
-          <button class="btn secondary public-placeholder-btn" type="button" disabled>Đặt sách</button>
+          <button class="btn primary" type="button" data-page="booking" data-book-id="${book.id}">Đặt sách</button>
         </div>
       </div>
 

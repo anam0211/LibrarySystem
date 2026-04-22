@@ -16,6 +16,7 @@ export const navigationSections = [
     title: "Hệ thống",
     items: [
       { id: "users", label: "Tài khoản", description: "Người dùng, vai trò" },
+      { id: "circulation", label: "Mượn / Trả", description: "Lưu thông sách" },
       { id: "operations", label: "Báo cáo", description: "Số liệu vận hành" }
     ]
   }
@@ -86,14 +87,24 @@ function renderHoverMenu({
   `;
 }
 
-function renderNavigation(activePage) {
+function renderNavigation(activePage, session) {
   return navigationSections
     .map(
-      (section) => `
+      (section) => {
+        const visibleItems = section.items.filter(item => {
+          if (item.id === "users") {
+            return session?.role === "ADMIN";
+          }
+          return true;
+        });
+
+        if (visibleItems.length === 0) return "";
+
+        return `
         <div class="nav-section">
           <p class="nav-section-label">${escapeHtml(section.title)}</p>
           <div class="nav">
-            ${section.items
+            ${visibleItems
               .map(
                 (item) => `
                   <button class="nav-btn ${item.id === activePage ? "active" : ""}" type="button" data-page="${item.id}">
@@ -106,7 +117,7 @@ function renderNavigation(activePage) {
           </div>
         </div>
       `
-    )
+      })
     .join("");
 }
 
@@ -132,7 +143,7 @@ function renderUserDropdown(isAuthenticated, session) {
         </div>
         <hr class="public-user-divider">
         <button class="public-user-link" type="button" data-page="reader" role="menuitem">Trang cá nhân</button>
-        <button class="public-user-link" type="button" data-page="reader" role="menuitem">Lịch sử mượn</button>
+        <button class="public-user-link" type="button" data-page="history" role="menuitem">Lịch sử mượn</button>
         <button class="public-user-link danger" type="button" data-action="public-logout" role="menuitem">Đăng xuất</button>
       </div>
     </div>
@@ -210,7 +221,7 @@ export function renderAppShell({
           </div>
         </div>
 
-        ${renderNavigation(activePage)}
+        ${renderNavigation(activePage, session)}
       </aside>
 
       <main class="content">

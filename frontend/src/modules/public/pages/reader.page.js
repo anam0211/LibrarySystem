@@ -20,10 +20,25 @@ function renderReaderRecommendation(book) {
         <p class="mini">${escapeHtml(truncate(book.description || "Chưa có mô tả.", 90))}</p>
         <div class="catalog-card-actions">
           <button class="btn secondary" type="button" data-page="bookDetail" data-book-id="${book.id}">Xem chi tiết</button>
-          <button class="btn secondary public-placeholder-btn" type="button" disabled>Đặt sách</button>
-        </div>
-      </div>
+          <button class="btn primary" type="button" onclick="event.stopPropagation()" data-page="booking" data-book-id="${book.id}">Đặt sách</button>        
+      </div> </div>
     </article>
+  `;
+}
+
+function renderHistoryItem(loan) {
+  const bookTitles = loan.items.map(item => item.bookTitle).join(" • ");
+  const isOverdue = loan.status === "OPEN" && new Date(loan.dueDate) < new Date(new Date().setHours(0,0,0,0));
+  const dueStyle = isOverdue ? 'color: #ef4444; font-weight: bold;' : 'color: #64748b;';
+  const dueText = isOverdue ? `Quá hạn (${loan.dueDate})` : `Hạn: ${loan.dueDate}`;
+  return `
+    <div style="padding: 8px 0; border-bottom: 1px dashed #e2e8f0; margin-bottom: 8px;">
+      <div style="display: flex; justify-content: space-between;">
+        <strong>Phiếu #${loan.loanId}</strong>
+        <span style="font-size: 13px; ${dueStyle}">${dueText}</span>
+      </div>
+      <p class="subtle" style="font-size: 14px; margin-top: 4px;">${escapeHtml(bookTitles)}</p>
+    </div>
   `;
 }
 
@@ -38,6 +53,27 @@ export function renderReaderPage(store) {
   const accountName = currentUser?.name || session?.name || "Độc giả";
   const accountEmail = currentUser?.email || session?.email || "reader@library.com";
   const accountRole = currentUser?.role || session?.role || "READER";
+
+  const history = store.getMyHistory?.() || [];
+  
+  const today = new Date(new Date().setHours(0,0,0,0));
+  const closedLoans = history.filter(h => h.status === "CLOSED");
+  const openLoans = history.filter(h => h.status === "OPEN");
+  
+  const activeLoans = openLoans.filter(h => new Date(h.dueDate) >= today);
+  const overdueLoans = openLoans.filter(h => new Date(h.dueDate) < today);
+
+  const openHtml = activeLoans.length > 0 
+    ? activeLoans.map(renderHistoryItem).join("") 
+    : '<p class="subtle">Bạn không có phiếu nào đang mượn.</p>';
+    
+  const closedHtml = closedLoans.length > 0 
+    ? closedLoans.map(renderHistoryItem).join("") 
+    : '<p class="subtle">Bạn chưa trả cuốn sách nào.</p>';
+
+  const overdueHtml = overdueLoans.length > 0
+    ? overdueLoans.map(renderHistoryItem).join("")
+    : '<p class="subtle">Bạn không có phiếu phạt/quá hạn nào. Tuyệt vời!</p>';
 
   return `
     <section class="reader-hero">
@@ -65,11 +101,11 @@ export function renderReaderPage(store) {
           </div>
           <div class="detail-item">
             <p class="eyebrow">Lịch sử mượn</p>
-            <strong>Chưa có dữ liệu</strong>
+            <strong>${history.length} giao dịch</strong>
           </div>
           <div class="detail-item">
             <p class="eyebrow">Thông báo</p>
-            <strong>Chưa có dữ liệu</strong>
+            <strong>0 tin mới</strong>
           </div>
         </div>
       </div>
@@ -88,8 +124,8 @@ export function renderReaderPage(store) {
       </div>
       <div class="chip-card">
         <p class="eyebrow">Mượn / trả</p>
-        <h3 class="card-title">Chưa có dữ liệu</h3>
-        <p class="subtle">Sẽ cập nhật sau.</p>
+        <h3 class="card-title">${activeLoans.length} đang mượn</h3>
+        <p class="subtle">Quá hạn: ${overdueLoans.length} • Đã trả: ${closedLoans.length}</p>
       </div>
     </div>
 
@@ -98,13 +134,22 @@ export function renderReaderPage(store) {
         <div class="section-head">
           <div>
             <p class="eyebrow">Lịch sử mượn</p>
-            <h2>Chưa có dữ liệu</h2>
+            <h2>Danh sách giao dịch</h2>
           </div>
         </div>
         <div class="stack">
-          <div class="list-item"><strong>Phiếu đang mượn</strong><p class="subtle">Chưa có dữ liệu.</p></div>
-          <div class="list-item"><strong>Đã trả</strong><p class="subtle">Chưa có dữ liệu.</p></div>
-          <div class="list-item"><strong>Quá hạn / tiền phạt</strong><p class="subtle">Chưa có dữ liệu.</p></div>
+          <div class="list-item" style="display: block;">
+            <strong>Phiếu đang mượn (${activeLoans.length})</strong>
+            <div style="margin-top: 10px;">${openHtml}</div>
+          </div>
+          <div class="list-item" style="display: block;">
+            <strong>Đã trả (${closedLoans.length})</strong>
+            <div style="margin-top: 10px;">${closedHtml}</div>
+          </div>
+          <div class="list-item" style="display: block;">
+            <strong style="color: #ef4444;">Quá hạn / tiền phạt (${overdueLoans.length})</strong>
+            <div style="margin-top: 10px;">${overdueHtml}</div>
+          </div>
         </div>
       </div>
 

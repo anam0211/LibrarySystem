@@ -155,6 +155,10 @@ function readPageStateFromLocation(pageKey) {
         status: params.get("status") || "",
         selectedId: parseOptionalNumber(params.get("selected"))
       };
+    case "booking":
+      return {
+        bookId: parseOptionalNumber(params.get("bookId"))
+      };
     default:
       return {};
   }
@@ -211,6 +215,9 @@ function buildSearchParamsForPage(pageKey, state = {}) {
       appendSearchParam(params, "q", state.query);
       appendSearchParam(params, "status", state.status);
       appendSearchParam(params, "selected", state.selectedId);
+      break;
+    case "booking":
+      appendSearchParam(params, "bookId", state.bookId);
       break;
     default:
       break;
@@ -488,7 +495,10 @@ export function initLibraryApp() {
     appRoot.querySelectorAll("[data-page]").forEach((button) => {
       button.addEventListener("click", () => {
         if (button.dataset.bookId) {
-          navigateToPage("bookDetail", {
+          const targetPage = (button.dataset.page && button.dataset.page !== "home") 
+                              ? button.dataset.page 
+                              : "bookDetail";                  
+          navigateToPage(targetPage, {
             bookId: Number(button.dataset.bookId || 0),
             message: ""
           }, { scrollTop: true });
@@ -781,6 +791,11 @@ export function initLibraryApp() {
       return;
     }
 
+    if (session?.role === "LIBRARIAN" && activePage === "users") {
+      navigateToPage("dashboard", undefined, { replace: true });
+      return;
+    }
+
     if (isPublicPage(activePage)) {
       renderPublicWorkspace(session);
       return;
@@ -921,6 +936,11 @@ export function initLibraryApp() {
 
     if (session?.role === "READER" && isAdminPage(pageKey)) {
       navigateToPage("reader", undefined, { replace: true });
+      return;
+    }
+
+    if (session?.role === "LIBRARIAN" && pageKey === "users") {
+      navigateToPage("dashboard", undefined, { replace: true });
       return;
     }
 
