@@ -144,6 +144,7 @@ function renderUserDropdown(isAuthenticated, session) {
         <hr class="public-user-divider">
         <button class="public-user-link" type="button" data-page="reader" role="menuitem">Trang cá nhân</button>
         <button class="public-user-link" type="button" data-page="history" role="menuitem">Lịch sử mượn</button>
+        <button class="public-user-link" type="button" data-page="notifications" role="menuitem">Thông báo</button>
         <button class="public-user-link danger" type="button" data-action="public-logout" role="menuitem">Đăng xuất</button>
       </div>
     </div>

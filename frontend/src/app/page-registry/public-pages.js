@@ -12,6 +12,7 @@ import {
 import { readerMeta, renderReaderPage } from "../../modules/public/pages/reader.page.js";
 import { bookingMeta, renderBookingPage, bindBookingPage } from "../../modules/public/pages/booking.page.js";
 import { historyMeta, renderHistoryPage, bindHistoryPage, loadHistoryPage } from "../../modules/public/pages/history.page.js";
+import { notificationsMeta, renderNotificationsPage, bindNotificationsPage, loadNotificationsPage } from "../../modules/notification/pages/notifications.page.js";
 function hasSearchFilters(pageState = {}) {
   return Boolean(
     pageState.keyword
@@ -40,6 +41,7 @@ export const publicPagePaths = {
   reader: "/reader",
   booking: "/booking",
   history: "/history",
+  notifications: "/notifications",
 };
 
 export const publicPageRegistry = {
@@ -123,6 +125,12 @@ export const publicPageRegistry = {
     render: renderHistoryPage,
     bind: bindHistoryPage,
     load: loadHistoryPage   
+  },
+  notifications: {
+    meta: notificationsMeta,
+    render: renderNotificationsPage,
+    bind: bindNotificationsPage,
+    load: loadNotificationsPage
   }
 };
 

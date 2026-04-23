@@ -255,5 +255,36 @@ export function attachOperationsStore(cache) {
       const response = await http.put(`/circulation/reservations/${loanId}/cancel`, { reason });
       return response;
     },
+
+    async loadMyNotifications() {
+      const userId = cache.currentUser?.id || session?.id;
+      if (!userId || userId === 0) {
+        return [];
+      }
+
+      try {
+        const response = await http.get(`/notifications/user/${userId}`);
+        
+        if (Array.isArray(response)) {
+            cache.myNotifications = response;
+        } else {
+            cache.myNotifications = response?.result || response?.data || [];
+        }
+      } catch (error) {
+        console.error("❌ Lỗi API Thông báo trong Store:", error);
+        cache.myNotifications = [];
+      }
+      
+      return cache.myNotifications;
+    },
+
+    getMyNotifications() {
+      return cache.myNotifications || [];
+    },
+
+    async markNotificationAsRead(id) {
+      await http.put(`/notifications/${id}/read`);
+      await this.loadMyNotifications(); 
+    },
   };
 }

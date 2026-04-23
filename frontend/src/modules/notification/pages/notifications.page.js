@@ -1,63 +1,76 @@
 export const notificationsMeta = {
-  title: "Notifications",
-  description: "Frontend scaffold for due-date reminders, overdue notices and delivery logs."
+  title: "Thông báo",
+  description: "Trang hiển thị lịch sử thông báo và lời nhắc hệ thống."
 };
 
-const sampleJobs = [
-  { job: "Due tomorrow reminder", schedule: "Daily 08:00", target: "Borrowing due in 24h" },
-  { job: "Overdue alert", schedule: "Daily 09:00", target: "Borrowing overdue" },
-  { job: "Failed delivery retry", schedule: "Every 30 min", target: "Mail queue retry" }
-];
+const statusMap = { 'PENDING': 'Đang chờ', 'SENT': 'Đã gửi', 'FAILED': 'Thất bại', 'CANCELLED': 'Đã hủy' };
+const typeMap = { 'DUE_SOON': 'Sắp đến hạn', 'OVERDUE': 'Quá hạn', 'FINE_CREATED': 'Thông báo phạt', 'GENERIC': 'Hệ thống' };
+const channelMap = { 'INAPP': 'Trên web', 'EMAIL': 'Qua Email' };
 
-export function renderNotificationsPage() {
+// ==========================================
+// 1. HÀM LOAD (Gọi đúng hàm đã định nghĩa trong Store)
+// ==========================================
+export async function loadNotificationsPage(store) {
+  await store.loadMyNotifications();
+}
+
+export function renderNotificationsPage(store) {
+  // Lấy dữ liệu từ cache của Store
+  const notificationsList = store ? store.getMyNotifications() : [];
+
   return `
-    <div class="grid-3">
-      <div class="chip-card"><p class="eyebrow">Scheduler</p><h3 class="card-title">Cron and queue ready</h3><p class="subtle">Use backend jobs to drive reminder timing.</p></div>
-      <div class="chip-card"><p class="eyebrow">Templates</p><h3 class="card-title">Email notice variants</h3><p class="subtle">Prepare separate copy for due soon, overdue and account issues.</p></div>
-      <div class="chip-card"><p class="eyebrow">Audit</p><h3 class="card-title">Delivery log panel</h3><p class="subtle">Useful for demoing reliability and traceability.</p></div>
-    </div>
-
-    <div class="grid-2">
-      <div class="table-card">
-        <div class="section-head">
-          <div>
-            <p class="eyebrow">Scheduled jobs</p>
-            <h3 class="card-title">Reminder engine outline</h3>
-          </div>
-        </div>
-        <div class="table-wrap">
-          <table class="table">
-            <thead><tr><th>Job</th><th>Schedule</th><th>Target</th></tr></thead>
-            <tbody>
-              ${sampleJobs
-                .map(
-                  (job) => `
-                    <tr>
-                      <td><strong>${job.job}</strong></td>
-                      <td>${job.schedule}</td>
-                      <td>${job.target}</td>
-                    </tr>
-                  `
-                )
-                .join("")}
-            </tbody>
-          </table>
-        </div>
+    <div style="max-width: 1000px; margin: 0 auto; padding: 20px 0;">
+      <div style="margin-bottom: 24px;">
+        <h2 style="font-size: 24px; color: #0f172a; margin-bottom: 8px;">Lịch sử thông báo</h2>
+        <p style="color: #64748b;">Xem lại các thông báo và lời nhắc từ hệ thống.</p>
       </div>
 
       <div class="table-card">
-        <div class="section-head">
-          <div>
-            <p class="eyebrow">Next backend hooks</p>
-            <h3 class="card-title">Expected API and service pieces</h3>
-          </div>
-        </div>
-        <div class="stack">
-          <div class="list-item"><strong>Mail trigger endpoint</strong><p class="subtle">Optional for manual resend and admin troubleshooting.</p></div>
-          <div class="list-item"><strong>Notification history</strong><p class="subtle">Expose recipient, channel, template and delivery result.</p></div>
-          <div class="list-item"><strong>Scheduler status</strong><p class="subtle">Useful for dashboard health visibility during demo.</p></div>
+        <div class="table-wrap">
+          <table class="table" style="width: 100%; text-align: left;">
+            <thead>
+              <tr>
+                <th style="padding: 16px;">Tiêu đề</th>
+                <th style="padding: 16px;">Loại</th>
+                <th style="padding: 16px;">Kênh</th>
+                <th style="padding: 16px;">Trạng thái</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${notificationsList.length === 0 ? `
+                <tr>
+                  <td colspan="4" style="text-align: center; padding: 40px; color: #64748b;">
+                    Bạn chưa có thông báo nào từ hệ thống.
+                  </td>
+                </tr>
+              ` : notificationsList.map(notif => `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                  <td style="padding: 16px;">
+                    <strong>${notif.subject || 'Thông báo hệ thống'}</strong>
+                    <div style="font-size: 13px; color: #64748b; margin-top: 4px;">
+                      ${notif.body || ''}
+                    </div>
+                  </td>
+                  <td style="padding: 16px;">${typeMap[notif.type] || notif.type}</td>
+                  <td style="padding: 16px;">${channelMap[notif.channel] || notif.channel}</td>
+                  <td style="padding: 16px;">
+                    <span style="font-size: 11px; font-weight: 500; border-radius: 4px; padding: 2px 6px; 
+                                 background: ${notif.status === 'SENT' ? '#d1fae5' : '#fef3c7'}; 
+                                 color: ${notif.status === 'SENT' ? '#10b981' : '#d97706'};">
+                        ${statusMap[notif.status] || notif.status}
+                    </span>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
   `;
 }
+
+// ==========================================
+// 3. HÀM BIND
+// ==========================================
+export function bindNotificationsPage({ root, store }) {}

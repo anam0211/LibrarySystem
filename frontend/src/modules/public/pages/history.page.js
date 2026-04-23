@@ -7,7 +7,6 @@ export const historyMeta = {
   description: "Theo dõi trạng thái các tài liệu bạn đã đặt trước hoặc đang mượn."
 };
 
-// Hàm dịch trạng thái sang Tiếng Việt và gắn màu CSS chuẩn
 function translateStatus(status) {
   if (status === "OPEN") return `<span class="status info">ĐANG HOẠT ĐỘNG</span>`;
   if (status === "CLOSED") return `<span class="status success">ĐÃ HOÀN TẤT</span>`;
@@ -16,7 +15,6 @@ function translateStatus(status) {
 }
 
 export function renderHistoryPage(store) {
-  // Lấy dữ liệu lịch sử từ store
   const myHistory = store ? store.getMyHistory() : [];
 
   return `
