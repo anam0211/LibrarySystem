@@ -7,10 +7,10 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
-import com.library.module.user.entity.Role;
-import com.library.module.user.entity.User;
-import com.library.module.user.entity.UserStatus;
-import com.library.module.user.repository.UserRepository;
+import com.library.entity.Role;
+import com.library.entity.User;
+import com.library.entity.UserStatus;
+import com.library.repository.UserRepository;
 
 import jakarta.transaction.Transactional;
 import lombok.AccessLevel;

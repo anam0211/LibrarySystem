@@ -35,4 +35,13 @@ public class ApiResponse<T> {
         .result(result)
         .build(); 
     }
+
+    public static <T> ApiResponse<T> success(String message, T result){
+        return ApiResponse.<T>builder()
+        .code(1000)
+        .message(message)
+        .timestamp(Instant.now())
+        .result(result)
+        .build();
+    }
 }

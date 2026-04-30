@@ -1,7 +1,7 @@
 package com.library.common.exception;
 
 import com.library.common.response.ApiResponse;
-import com.library.module.book.exception.BookErrorCode;
+import com.library.exception.BookErrorCode;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

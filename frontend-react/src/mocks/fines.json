@@ -1,0 +1,25 @@
+[
+  {
+    "id": "FINE-9001",
+    "userId": 3,
+    "loanId": "ORD-23991",
+    "readerName": "Nguyễn Văn A",
+    "studentCode": "SV2026001",
+    "reason": "Trễ hạn 7 ngày",
+    "amount": 35000,
+    "status": "UNPAID",
+    "createdAt": "2026-04-10"
+  },
+  {
+    "id": "FINE-9002",
+    "userId": 4,
+    "loanId": "ORD-24002",
+    "readerName": "Trần Minh Anh",
+    "studentCode": "SV2026002",
+    "reason": "Hư hỏng bìa nhẹ",
+    "amount": 20000,
+    "status": "PAID",
+    "createdAt": "2026-04-18",
+    "paidAt": "2026-04-19"
+  }
+]

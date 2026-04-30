@@ -1,0 +1,371 @@
+import {
+  BellOutlined,
+  DashboardOutlined,
+  DownOutlined,
+  HeartOutlined,
+  HomeOutlined,
+  LoginOutlined,
+  LogoutOutlined,
+  SearchOutlined,
+  ShoppingCartOutlined,
+  TrophyOutlined,
+  UserOutlined
+} from "@ant-design/icons";
+import { Avatar, Dropdown, Input, Popover } from "antd";
+import { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { getDefaultRoute } from "../api/authStore";
+import { libraryGateway } from "../api/libraryGateway";
+
+function getInitials(session) {
+  return String(session?.fullName || session?.email || "U")
+    .trim()
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
+
+export function PublicHeader({
+  session,
+  onLogout,
+  onSearchClick,
+  onSearchSubmit,
+  searchValue,
+  navContent
+}) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isReader = session?.role === "READER";
+  const showReaderTools = !session || isReader;
+  const [navData, setNavData] = useState({ categories: [], authors: [] });
+  const [searchText, setSearchText] = useState(searchValue || "");
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadNavData() {
+      const facets = await libraryGateway.getFacets();
+
+      if (active) {
+        setNavData({
+          categories: facets.categories,
+          authors: facets.authors
+        });
+      }
+    }
+
+    loadNavData();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    setSearchText(searchValue || "");
+  }, [searchValue]);
+
+  function goHome() {
+    navigate("/", {
+      state: {
+        reset: true,
+        scrollTo: "top"
+      }
+    });
+  }
+
+  function goCatalog(filters = null) {
+    navigate("/", {
+      state: {
+        filters,
+        scrollTo: "catalog"
+      }
+    });
+  }
+
+  function goReaderTool(path) {
+    navigate(session ? path : "/login");
+  }
+
+  function handleSearchSubmit(event) {
+    event.preventDefault();
+
+    const keyword = searchText.trim();
+    setSearchOpen(false);
+
+    if (onSearchSubmit) {
+      onSearchSubmit(keyword);
+      return;
+    }
+
+    if (keyword) {
+      goCatalog({ keyword });
+      return;
+    }
+
+    if (onSearchClick) {
+      onSearchClick();
+      return;
+    }
+
+    goCatalog();
+  }
+
+  const categoryMenu = {
+    items: navData.categories.length
+      ? navData.categories.slice(0, 12).map((category) => ({
+          key: String(category.id),
+          label: category.name,
+          onClick: () => goCatalog({ categoryId: category.id })
+        }))
+      : [{ key: "empty", label: "Chưa có danh mục", disabled: true }]
+  };
+
+  const authorMenu = {
+    items: navData.authors.length
+      ? navData.authors.slice(0, 12).map((author) => ({
+          key: String(author.id),
+          label: author.name,
+          onClick: () => goCatalog({ authorId: author.id })
+        }))
+      : [{ key: "empty", label: "Chưa có tác giả", disabled: true }]
+  };
+
+  const accountMenu = session
+    ? [
+        {
+          key: "account",
+          icon: <UserOutlined />,
+          label: "Tài khoản",
+          onClick: () => navigate("/reader")
+        },
+        {
+          key: "workspace",
+          icon: <DashboardOutlined />,
+          label: isReader ? "Phiếu mượn" : "Trang quản trị",
+          onClick: () => navigate(getDefaultRoute(session.role))
+        },
+        {
+          key: "notifications",
+          icon: <BellOutlined />,
+          label: "Thông báo",
+          onClick: () => navigate("/notifications")
+        },
+        {
+          type: "divider"
+        },
+        {
+          key: "logout",
+          icon: <LogoutOutlined />,
+          label: "Đăng xuất",
+          danger: true,
+          onClick: () => {
+            onLogout?.();
+            navigate("/");
+          }
+        }
+      ]
+    : [
+        {
+          key: "login",
+          icon: <LoginOutlined />,
+          label: "Đăng nhập",
+          onClick: () => navigate("/login")
+        }
+      ];
+
+  const defaultNav = (
+    <nav className="public-nav" aria-label="Điều hướng công khai">
+      <button
+        className={`public-nav-btn ${location.pathname === "/" ? "active" : ""}`}
+        type="button"
+        onClick={goHome}
+      >
+        <HomeOutlined /> Trang chủ
+      </button>
+      <button className="public-nav-btn" type="button" onClick={() => goCatalog()}>
+        Kho sách
+      </button>
+      <button
+        className={`public-nav-btn ${location.pathname === "/leaderboard" ? "active" : ""}`}
+        type="button"
+        onClick={() => navigate("/leaderboard")}
+      >
+        <TrophyOutlined /> Xếp hạng
+      </button>
+      <Dropdown menu={categoryMenu} trigger={["click"]}>
+        <button className="public-nav-btn" type="button">
+          Danh mục <DownOutlined />
+        </button>
+      </Dropdown>
+      <Dropdown menu={authorMenu} trigger={["click"]}>
+        <button className="public-nav-btn" type="button">
+          Tác giả <DownOutlined />
+        </button>
+      </Dropdown>
+    </nav>
+  );
+
+  const searchContent = (
+    <form className="public-search-form" onSubmit={handleSearchSubmit}>
+      <Input
+        allowClear
+        autoFocus
+        size="large"
+        value={searchText}
+        prefix={<SearchOutlined />}
+        placeholder="Nhập tên sách, ISBN, tác giả rồi nhấn Enter"
+        onChange={(event) => setSearchText(event.target.value)}
+      />
+    </form>
+  );
+
+  return (
+    <header className="public-topbar">
+      <div className="public-navbar">
+        <button className="public-brand" type="button" aria-label="Về trang chủ" onClick={goHome}>
+          <h1>BOOKHUB</h1>
+          <p>Library</p>
+        </button>
+
+        {navContent || defaultNav}
+
+        <div className="public-nav-tools">
+          {showReaderTools ? (
+            <>
+              <button
+                className="public-icon-btn"
+                type="button"
+                aria-label="Yêu thích"
+                onClick={() => goReaderTool("/reader?tab=wishlist")}
+              >
+                <HeartOutlined />
+              </button>
+              <button
+                className="public-icon-btn"
+                type="button"
+                aria-label="Giỏ mượn"
+                onClick={() => goReaderTool("/cart")}
+              >
+                <ShoppingCartOutlined />
+              </button>
+            </>
+          ) : null}
+
+          <Popover
+            content={searchContent}
+            open={searchOpen}
+            overlayClassName="public-search-popover"
+            placement="bottomRight"
+            trigger="click"
+            onOpenChange={setSearchOpen}
+          >
+            <button
+              className={`public-icon-btn ${searchOpen ? "active" : ""}`}
+              type="button"
+              aria-label="Tìm kiếm"
+            >
+              <SearchOutlined />
+            </button>
+          </Popover>
+
+          <Dropdown menu={{ items: accountMenu }} placement="bottomRight" trigger={["click"]}>
+            <button className="public-account-btn" type="button" aria-label="Tài khoản">
+              {session ? <Avatar size={32}>{getInitials(session)}</Avatar> : <UserOutlined />}
+            </button>
+          </Dropdown>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+export function PublicFooter({ session }) {
+  const navigate = useNavigate();
+  const year = new Date().getFullYear();
+
+  function goHome() {
+    navigate("/", {
+      state: {
+        reset: true,
+        scrollTo: "top"
+      }
+    });
+  }
+
+  return (
+    <footer className="public-footer">
+      <div className="public-footer-grid">
+        <div className="public-footer-brand">
+          <strong className="public-footer-logo">BOOKHUB</strong>
+          <p className="public-footer-copy">Tra cứu sách trực tuyến của thư viện.</p>
+        </div>
+
+        <div className="public-footer-column">
+          <h3 className="public-footer-title">Điều hướng</h3>
+          <div className="public-footer-list">
+            <button className="public-footer-nav" type="button" onClick={goHome}>
+              Trang chủ
+            </button>
+            <button
+              className="public-footer-nav"
+              type="button"
+              onClick={() => navigate(session ? "/reader" : "/login")}
+            >
+              {session ? "Tài khoản" : "Đăng nhập"}
+            </button>
+          </div>
+        </div>
+
+        <div className="public-footer-column">
+          <h3 className="public-footer-title">Liên hệ</h3>
+          <div className="public-footer-list">
+            <span className="public-footer-item">BookHub Library</span>
+            <span className="public-footer-item">Email: support@bookhub.local</span>
+          </div>
+        </div>
+
+        <div className="public-footer-column">
+          <h3 className="public-footer-title">Giờ phục vụ</h3>
+          <div className="public-footer-list">
+            <span className="public-footer-item">Thứ 2 - Thứ 6: 08:00 - 17:00</span>
+            <span className="public-footer-item">Thứ 7: 08:00 - 11:30</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="public-footer-bottom">
+        <p>© {year} BookHub Library</p>
+        <p>Tra cứu và đặt trước sách trực tuyến</p>
+      </div>
+    </footer>
+  );
+}
+
+export default function PublicShell({
+  session,
+  onLogout,
+  onSearchClick,
+  onSearchSubmit,
+  searchValue,
+  navContent,
+  children
+}) {
+  return (
+    <div className="public-shell">
+      <PublicHeader
+        session={session}
+        onLogout={onLogout}
+        onSearchClick={onSearchClick}
+        onSearchSubmit={onSearchSubmit}
+        searchValue={searchValue}
+        navContent={navContent}
+      />
+      <main className="public-content">{children}</main>
+      <PublicFooter session={session} />
+    </div>
+  );
+}
