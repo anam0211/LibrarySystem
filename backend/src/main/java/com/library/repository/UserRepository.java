@@ -23,4 +23,7 @@ public interface UserRepository extends JpaRepository<User, Integer> {
     long countByRole(Role role);
 
     List<User> findByVerificationStatusOrderByCreatedAtAsc(VerificationStatus verificationStatus);
+
+    List<User> findByRole(Role role);
+
 }

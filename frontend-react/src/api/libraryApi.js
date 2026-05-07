@@ -28,10 +28,10 @@ export const libraryApi = {
     pendingKyc: () => apiClient.get("/v1/admin/users/pending-kyc"),
     approveKyc: (id) => apiClient.post(`/v1/admin/users/${id}/approve-kyc`, {}),
     rejectKyc: (id) => apiClient.post(`/v1/admin/users/${id}/reject-kyc`, {}),
-    requestVerification: (id, payload) => apiClient.put(`/users/${id}/verification/request`, payload),
-    approveVerification: (id) => apiClient.put(`/users/${id}/verification/approve`, {}),
-    rejectVerification: (id) => apiClient.put(`/users/${id}/verification/reject`, {}),
+    cancelVerification: () => apiClient.put("/v1/users/me/kyc/cancel", {}),
     suspend: (id) => apiClient.put(`/users/${id}/suspend`, {}),
+    activate: (id) => apiClient.put(`/users/${id}/activate`, {}),
+    update: (id, payload) => apiClient.put(`/users/${id}`, payload),
     remove: (id) => apiClient.delete(`/users/${id}`)
   },
   authors: {

@@ -12,11 +12,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.library.dto.request.VerificationRequest;
+import com.library.entity.Role;
 import com.library.entity.User;
 import com.library.entity.UserStatus;
 import com.library.entity.VerificationStatus;
 import com.library.repository.UserRepository;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/users")
@@ -73,6 +74,21 @@ public class UserController {
         return ResponseEntity.ok("Đã xóa tài khoản người dùng thành công!");
     }
 
+    @PutMapping("/{id}")
+    public ResponseEntity<?> updateUser(@PathVariable Integer id, @RequestBody User request) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng với ID này!"));
+
+        if (request.getFullName() != null) user.setFullName(request.getFullName());
+        if (request.getEmail() != null) user.setEmail(request.getEmail());
+        if (request.getPhone() != null) user.setPhone(request.getPhone());
+        if (request.getRole() != null) user.setRole(request.getRole());
+
+        userRepository.save(user);
+        
+        return ResponseEntity.ok("Đã cập nhật thông tin người dùng thành công!");
+    }
+
     @PutMapping("/{id}/suspend")
     public ResponseEntity<?> suspendUser(@PathVariable Integer id) {
         User user = userRepository.findById(id)
@@ -83,59 +99,16 @@ public class UserController {
 
         return ResponseEntity.ok("Đã khóa tài khoản người dùng thành công!");
     }
-    @PutMapping("/{id}/verification/request")
-    public ResponseEntity<?> requestVerification(@PathVariable Integer id, @RequestBody VerificationRequest request) {
+
+    @PutMapping("/{id}/activate")
+    public ResponseEntity<?> activateUser(@PathVariable Integer id) {
         User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Khong tim thay nguoi dung."));
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng với ID này!"));
 
-        if (user.getVerificationStatus() == VerificationStatus.VERIFIED) {
-            return ResponseEntity.badRequest().body("Hồ sơ đã được xác thực, bạn đọc không thể chỉnh sửa thông tin.");
-        }
-
-        if (request == null) {
-            return ResponseEntity.badRequest().body("Dữ liệu xác thực không được để trống.");
-        }
-
-        String nextImageUrl = firstNonBlank(normalize(request.getIdCardImageUrl()), user.getIdCardImageUrl());
-        if (normalize(nextImageUrl) == null) {
-            return ResponseEntity.badRequest().body("Ảnh CCCD là bắt buộc.");
-        }
-
-        user.setVerificationEmail(firstNonBlank(normalize(request.getEmail()), user.getVerificationEmail(), user.getEmail()));
-        user.setVerificationPhone(firstNonBlank(normalize(request.getPhone()), user.getVerificationPhone(), user.getPhone()));
-        user.setVerificationAddress(firstNonBlank(normalize(request.getAddress()), user.getVerificationAddress()));
-        user.setIdCardNumber(firstNonBlank(normalize(request.getIdCardNumber()), user.getIdCardNumber()));
-        user.setIdCardImageUrl(nextImageUrl);
-        user.setVerificationStatus(VerificationStatus.PENDING);
+        user.setStatus(UserStatus.ACTIVE);
         userRepository.save(user);
 
-        return ResponseEntity.ok("Đã lưu hồ sơ xác thực thành công.");
-    }
-
-    @PutMapping("/{id}/verification/approve")
-    public ResponseEntity<?> approveVerification(@PathVariable Integer id) {
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Khong tim thay nguoi dung."));
-
-        if (normalize(user.getIdCardImageUrl()) == null) {
-            return ResponseEntity.badRequest().body("Người dùng chưa gửi ảnh CCCD.");
-        }
-
-        user.setVerificationStatus(VerificationStatus.VERIFIED);
-        userRepository.save(user);
-
-        return ResponseEntity.ok("Đã duyệt hồ sơ xác thực.");
-    }
-
-    @PutMapping("/{id}/verification/reject")
-    public ResponseEntity<?> rejectVerification(@PathVariable Integer id) {
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Khong tim thay nguoi dung."));
-
-        user.setVerificationStatus(VerificationStatus.UNVERIFIED);
-        userRepository.save(user);
-
-        return ResponseEntity.ok("Da tu choi ho so xac thuc.");
+        return ResponseEntity.ok("Đã mở khóa tài khoản người dùng thành công!");
     }
 
     private String firstNonBlank(String... values) {

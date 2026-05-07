@@ -19,6 +19,7 @@ import Login from "./pages/Login";
 import Media from "./pages/Media";
 import Publishers from "./pages/Publishers";
 import Reader from "./pages/Reader";
+import Notifications from "./pages/Notifications";
 import Users from "./pages/Users";
 
 function ScrollToTop() {
@@ -57,14 +58,6 @@ export default function App() {
           element={session ? <Navigate to={defaultProtectedPath} replace /> : <Login onLogin={handleLogin} />}
         />
         <Route
-          path="/cart"
-          element={
-            <ProtectedRoute session={session} roles={["READER"]}>
-              <Cart session={session} onLogout={handleLogout} />
-            </ProtectedRoute>
-          }
-        />
-        <Route
           path="/booking/:bookId"
           element={
             <ProtectedRoute session={session} roles={["READER", "ADMIN", "LIBRARIAN"]}>
@@ -85,6 +78,14 @@ export default function App() {
             element={
               <ProtectedRoute session={session} roles={["READER", "ADMIN", "LIBRARIAN"]}>
                 <Reader session={session} onSessionUpdate={handleLogin} />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/cart"
+            element={
+              <ProtectedRoute session={session} roles={["READER"]}>
+                <Cart session={session} onLogout={handleLogout} />
               </ProtectedRoute>
             }
           />
@@ -169,7 +170,14 @@ export default function App() {
             }
           />
           <Route path="/operations" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/notifications" element={<Navigate to="/reader" replace />} />
+        <Route
+          path="/notifications"
+          element={
+            <ProtectedRoute session={session}>
+              <Notifications />
+            </ProtectedRoute>
+          }
+        />
         </Route>
 
         <Route path="*" element={<Navigate to={defaultProtectedPath} replace />} />

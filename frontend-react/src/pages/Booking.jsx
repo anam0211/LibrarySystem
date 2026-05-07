@@ -13,6 +13,7 @@ export default function Booking({ session, onLogout }) {
     async function addBook() {
       await libraryGateway.addToCart(session.id, Number(bookId));
       message.success("Đã thêm sách vào giỏ mượn.");
+      window.dispatchEvent(new Event("cartUpdated"));
     }
 
     if (session?.id && bookId) {

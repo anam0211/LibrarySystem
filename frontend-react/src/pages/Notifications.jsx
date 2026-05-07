@@ -1,4 +1,4 @@
-import { CheckCircleOutlined, MailOutlined, NotificationOutlined } from "@ant-design/icons";
+import { CheckCircleOutlined, CheckSquareOutlined, MailOutlined, NotificationOutlined } from "@ant-design/icons";
 import {
   Button,
   Card,
@@ -11,6 +11,7 @@ import {
 import { useEffect, useState } from "react";
 import { libraryApi } from "../api/libraryApi";
 import { formatDateTime } from "../components/formatters";
+import PageHeader from "../components/PageHeader";
 
 const TYPE_LABELS = {
   DUE_SOON: "Sắp đến hạn",
@@ -51,13 +52,38 @@ export default function Notifications() {
     }
   }
 
+  async function handleMarkAllAsRead() {
+    const unreadNotifs = notifications.filter((n) => !n.readAt);
+    if (!unreadNotifs.length) return;
+
+    setLoading(true);
+    try {
+      // Gọi API đánh dấu đã đọc cho tất cả các thông báo chưa đọc cùng lúc
+      await Promise.all(unreadNotifs.map((item) => libraryApi.notifications.markAsRead(item.notificationId)));
+      message.success("Đã đánh dấu tất cả là đã đọc.");
+      loadNotifications();
+    } catch (error) {
+      message.error(error.message);
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="page-shell">
-      <div>
-        <p className="page-eyebrow">Thông báo</p>
-        <h1 className="page-title">Thông báo từ hệ thống</h1>
-        <p className="page-copy">Xem lời nhắc sắp đến hạn, quá hạn và các thông điệp vận hành khác.</p>
-      </div>
+      <PageHeader
+        eyebrow="Thông báo"
+        title="Thông báo từ hệ thống"
+        description="Xem lời nhắc sắp đến hạn, quá hạn và các thông điệp vận hành khác."
+        extra={
+          <Button
+            icon={<CheckSquareOutlined />}
+            onClick={handleMarkAllAsRead}
+            disabled={!notifications.some((n) => !n.readAt)}
+          >
+            Đánh dấu tất cả là đã đọc
+          </Button>
+        }
+      />
 
       <Card className="glass-card">
         <List

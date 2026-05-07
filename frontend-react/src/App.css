@@ -777,7 +777,7 @@ p {
 
 .kanban-board {
   display: grid;
-  grid-template-columns: repeat(4, minmax(220px, 1fr));
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
   gap: 14px;
   overflow-x: auto;
 }
@@ -1498,7 +1498,7 @@ p {
   }
 
   .kanban-board {
-    grid-template-columns: repeat(4, 260px);
+    grid-template-columns: repeat(3, 260px);
   }
 }
 

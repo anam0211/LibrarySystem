@@ -18,7 +18,8 @@ import {
   Spin,
   Tag,
   Typography,
-  message
+  message,
+  notification
 } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -48,6 +49,8 @@ export default function BookDetail({ session, onLogout }) {
   const [book, setBook] = useState(null);
   const [media, setMedia] = useState([]);
   const [wishlist, setWishlist] = useState([]);
+  const [cartStatus, setCartStatus] = useState("idle");
+  const [notifyApi, notifyContextHolder] = notification.useNotification();
 
   async function loadDetail() {
     setLoading(true);
@@ -101,9 +104,25 @@ export default function BookDetail({ session, onLogout }) {
       return;
     }
 
-    await libraryGateway.addToCart(session.id, book.id);
-    message.success("Đã thêm vào giỏ mượn.");
-    navigate("/cart");
+    setCartStatus("loading");
+    try {
+      await libraryGateway.addToCart(session.id, book.id);
+      notifyApi.success({
+        message: "Thêm giỏ thành công",
+        description: `Đã thêm "${book.title}" vào giỏ.`,
+        placement: "bottomRight"
+      });
+      window.dispatchEvent(new Event("cartUpdated"));
+      setCartStatus("added");
+      setTimeout(() => setCartStatus("idle"), 1500);
+    } catch (error) {
+      notifyApi.error({
+        message: "Không thể thêm vào giỏ",
+        description: error?.message || "Đã xảy ra lỗi khi thêm vào giỏ mượn.",
+        placement: "bottomRight"
+      });
+      setCartStatus("idle");
+    }
   }
 
   async function handleWishlist() {
@@ -134,6 +153,7 @@ export default function BookDetail({ session, onLogout }) {
 
   return (
     <PublicShell session={session} onLogout={onLogout}>
+      {notifyContextHolder}
       <section className="book-detail-page">
         <Card className="glass-card">
           <div className="detail-grid">
@@ -184,13 +204,14 @@ export default function BookDetail({ session, onLogout }) {
 
               <div className="book-detail-actions">
                 <Button
-                  type="primary"
+                  type={cartStatus === "added" ? "default" : "primary"}
                   size="large"
                   icon={<ShoppingCartOutlined />}
-                  disabled={!available}
+                  disabled={!available || cartStatus === "added"}
+                  loading={cartStatus === "loading"}
                   onClick={handleAddToCart}
                 >
-                  Mượn ngay
+                  {!session ? "Đăng nhập" : cartStatus === "added" ? "Đã thêm" : "Thêm giỏ"}
                 </Button>
                 <Button
                   size="large"

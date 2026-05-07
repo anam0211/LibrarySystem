@@ -1,12 +1,16 @@
 import {
   DeleteOutlined,
+  EditOutlined,
   LockOutlined,
-  SearchOutlined
+  SearchOutlined,
+  UnlockOutlined
 } from "@ant-design/icons";
 import {
   Button,
   Card,
+  Form,
   Input,
+  Modal,
   Popconfirm,
   Select,
   Space,
@@ -25,6 +29,9 @@ export default function Users() {
   const [users, setUsers] = useState([]);
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState(undefined);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [form] = Form.useForm();
 
   async function loadUsers() {
     setLoading(true);
@@ -53,10 +60,43 @@ export default function Users() {
     }
   }
 
+  async function handleActivate(record) {
+    try {
+      await libraryApi.users.activate(record.id);
+      message.success("Đã mở khóa tài khoản.");
+      loadUsers();
+    } catch (error) {
+      message.error(error.message);
+    }
+  }
+
   async function handleDelete(record) {
     try {
       await libraryApi.users.remove(record.id);
       message.success("Đã xóa tài khoản.");
+      loadUsers();
+    } catch (error) {
+      message.error(error.message);
+    }
+  }
+
+  function handleEdit(record) {
+    setEditingUser(record);
+    form.setFieldsValue({
+      fullName: record.fullName,
+      email: record.email,
+      phone: record.phone,
+      role: record.role
+    });
+    setEditModalOpen(true);
+  }
+
+  async function handleUpdate(values) {
+    try {
+      await libraryApi.users.update(editingUser.id, values);
+      message.success("Đã cập nhật thông tin người dùng.");
+      setEditModalOpen(false);
+      setEditingUser(null);
       loadUsers();
     } catch (error) {
       message.error(error.message);
@@ -130,9 +170,13 @@ export default function Users() {
               render: (value) => <Tag color={value === "SUSPENDED" ? "red" : "green"}>{value || "ACTIVE"}</Tag>
             },
             {
-              title: "Số điện thoại",
-              dataIndex: "phone",
-              render: (value) => value || "-"
+              title: "Xác thực",
+              dataIndex: "verificationStatus",
+              render: (value, record) => {
+                const status = value || record.kycStatus;
+                const isVerified = status === "VERIFIED";
+                return <Tag color={isVerified ? "green" : "red"}>{isVerified ? "VERIFIED" : "UNVERIFIED"}</Tag>;
+              }
             },
             {
               title: "Tạo lúc",
@@ -144,17 +188,26 @@ export default function Users() {
               key: "actions",
               render: (_, record) => (
                 <Space className="table-actions">
-                  <Popconfirm
-                    title="Khóa tài khoản?"
-                    okText="Khóa"
-                    cancelText="Hủy"
-                    onConfirm={() => handleSuspend(record)}
-                  >
-                    <Button
-                      icon={<LockOutlined />}
-                      disabled={record.status === "SUSPENDED"}
-                    />
-                  </Popconfirm>
+                  <Button icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+              {record.status === "SUSPENDED" ? (
+                <Popconfirm
+                  title="Mở khóa tài khoản?"
+                  okText="Mở khóa"
+                  cancelText="Hủy"
+                  onConfirm={() => handleActivate(record)}
+                >
+                  <Button icon={<UnlockOutlined />} />
+                </Popconfirm>
+              ) : (
+                <Popconfirm
+                  title="Khóa tài khoản?"
+                  okText="Khóa"
+                  cancelText="Hủy"
+                  onConfirm={() => handleSuspend(record)}
+                >
+                  <Button icon={<LockOutlined />} />
+                </Popconfirm>
+              )}
                   <Popconfirm
                     title="Xóa tài khoản?"
                     description="Hành động này không thể hoàn tác."
@@ -170,6 +223,68 @@ export default function Users() {
           ]}
         />
       </Card>
+
+      <Modal
+        title="Chỉnh sửa người dùng"
+        open={editModalOpen}
+        onCancel={() => {
+          setEditModalOpen(false);
+          setEditingUser(null);
+        }}
+        footer={[
+          <Button key="cancel" onClick={() => {
+            setEditModalOpen(false);
+            setEditingUser(null);
+          }}>
+            Hủy
+          </Button>,
+          <Button key="submit" type="primary" onClick={() => form.submit()}>
+            OK
+          </Button>
+        ]}
+      >
+        <Form form={form} layout="vertical" onFinish={handleUpdate}>
+          <Form.Item
+            name="fullName"
+            label="Họ tên"
+            rules={[{ required: true, message: "Vui lòng nhập họ tên" }]}
+          >
+            <Input />
+          </Form.Item>
+          <Form.Item
+            name="email"
+            label="Email"
+            rules={[
+              { required: true, message: "Vui lòng nhập email" },
+              { type: "email", message: "Email không hợp lệ" }
+            ]}
+          >
+            <Input />
+          </Form.Item>
+          <Form.Item 
+            name="phone" label="Số điện thoại"
+            rules={[
+              { required: true, message: "Vui lòng nhập SĐT" },
+              { type: "phone", message: "SĐT không hợp lệ" }
+            ]}
+          >
+            <Input />
+          </Form.Item>
+          <Form.Item
+            name="role"
+            label="Vai trò"
+            rules={[{ required: true, message: "Vui lòng chọn vai trò" }]}
+          >
+            <Select
+              options={[
+                { label: "Độc giả (READER)", value: "READER" },
+                { label: "Thủ thư (LIBRARIAN)", value: "LIBRARIAN" },
+                { label: "Quản trị viên (ADMIN)", value: "ADMIN" }
+              ]}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 }

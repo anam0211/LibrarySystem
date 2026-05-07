@@ -26,7 +26,6 @@ import {
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { libraryGateway } from "../api/libraryGateway";
-import PublicShell from "../components/PublicChrome";
 import { formatCurrency, formatNumber } from "../components/formatters";
 
 function MockCover({ book }) {
@@ -83,6 +82,7 @@ export default function Cart({ session, onLogout }) {
   async function removeBook(bookId) {
     await libraryGateway.removeFromCart(session.id, bookId);
     loadCart();
+    window.dispatchEvent(new Event("cartUpdated"));
   }
 
   async function handleCheckout(values) {
@@ -90,6 +90,7 @@ export default function Cart({ session, onLogout }) {
       const loan = await libraryGateway.checkout(session.id, values);
       message.success("Đã tạo đơn mượn.");
       navigate("/reader", { state: { loanId: loan.id } });
+      window.dispatchEvent(new Event("cartUpdated"));
     } catch (error) {
       message.error(error.message);
     }
@@ -98,8 +99,7 @@ export default function Cart({ session, onLogout }) {
   const deliveryFee = receiveMethod === "DELIVERY" ? 18000 : 0;
 
   return (
-    <PublicShell session={session} onLogout={onLogout}>
-      <section className="page-shell">
+    <div className="page-shell">
         <div className="page-toolbar">
           <div>
             <p className="page-eyebrow">Giỏ mượn</p>
@@ -239,7 +239,6 @@ export default function Cart({ session, onLogout }) {
             </Card>
           </Col>
         </Row>
-      </section>
-    </PublicShell>
+    </div>
   );
 }

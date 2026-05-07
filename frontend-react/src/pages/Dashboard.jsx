@@ -90,7 +90,7 @@ function statusTitle(columns, status) {
   return columns.find((column) => column.key === status)?.title || status;
 }
 
-function KanbanBoard({ title, subtitle, icon, mode, columns, loans, onMove }) {
+function KanbanBoard({ title, subtitle, icon, mode, columns, loans, onMove, onStatusChange }) {
   return (
     <Card
       className="glass-card"
@@ -150,6 +150,63 @@ function KanbanBoard({ title, subtitle, icon, mode, columns, loans, onMove }) {
                         <span>{formatDate(loan.createdAt)}</span>
                         <span>Hạn: {formatDate(loan.dueDate)}</span>
                       </div>
+                      {column.key === "NEW" ? (
+                        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
+                          <Button
+                            type="primary"
+                            onClick={() =>
+                              mode === "PICKUP"
+                                ? onStatusChange(loan.id, "BORROWING", "Đang mượn")
+                                : onStatusChange(loan.id, "PACKING", "Đang đóng gói")
+                            }
+                          >
+                            Xác nhận
+                          </Button>
+                        </div>
+                      ) : column.key === "PACKING" ? (
+                        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
+                          <Button
+                            type="primary"
+                            style={{ background: "var(--success)", borderColor: "var(--success)" }}
+                            onClick={() => onStatusChange(loan.id, "SHIPPING", "Đang giao")}
+                          >
+                            Hoàn thành
+                          </Button>
+                        </div>
+                      ) : column.key === "SHIPPING" ? (
+                        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
+                          <Button
+                            type="primary"
+                            style={{ background: "var(--success)", borderColor: "var(--success)" }}
+                            onClick={() => onStatusChange(loan.id, "BORROWING", "Đang mượn")}
+                          >
+                            Hoàn thành
+                          </Button>
+                        </div>
+                      ) : column.key === "BORROWING" ? (
+                        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
+                          <Button
+                    onClick={async () => {
+                      if (mode === "DELIVERY") {
+                        // Bước đệm: Gọi ngầm API sang RETURNING để vượt qua validate của Backend
+                        try { await libraryGateway.moveLoan(loan.id, "RETURNING"); } catch (e) {}
+                      }
+                      onStatusChange(loan.id, "RETURNED", "Đã trả");
+                    }}
+                          >
+                            Trả sách
+                          </Button>
+                        </div>
+                      ) : column.key === "RETURNING" ? (
+                        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
+                          <Button
+                            type="primary"
+                            onClick={() => onStatusChange(loan.id, "RETURNED", "Đã trả")}
+                          >
+                            Xác nhận
+                          </Button>
+                        </div>
+                      ) : null}
                     </Space>
                   </article>
                 ))}
@@ -187,6 +244,16 @@ export default function Dashboard() {
     refresh();
   }, []);
 
+  async function handleStatusChange(loanId, status, title) {
+    try {
+      await libraryGateway.moveLoan(loanId, status);
+      await refresh();
+      message.success(`Đã chuyển đơn ${loanId} sang ${title}.`);
+    } catch (error) {
+      message.error(error?.message || "Không thể cập nhật trạng thái đơn.");
+    }
+  }
+
   async function handleDrop(event, status, mode, title) {
     const loanId = event.dataTransfer.getData("text/plain");
     const sourceMode = event.dataTransfer.getData("loan-mode");
@@ -200,13 +267,7 @@ export default function Dashboard() {
       return;
     }
 
-    try {
-      await libraryGateway.moveLoan(loanId, status);
-      await refresh();
-      message.success(`Đã chuyển đơn ${loanId} sang ${title}.`);
-    } catch (error) {
-      message.error(error?.message || "Không thể cập nhật trạng thái đơn.");
-    }
+    await handleStatusChange(loanId, status, title);
   }
 
   const kanbanLoans = useMemo(
@@ -286,6 +347,7 @@ export default function Dashboard() {
         columns={PICKUP_COLUMNS}
         loans={pickupLoans}
         onMove={handleDrop}
+        onStatusChange={handleStatusChange}
       />
 
       <KanbanBoard
@@ -296,6 +358,7 @@ export default function Dashboard() {
         columns={DELIVERY_COLUMNS}
         loans={deliveryLoans}
         onMove={handleDrop}
+        onStatusChange={handleStatusChange}
       />
 
       <Row gutter={[20, 20]}>

@@ -11,7 +11,7 @@ import {
   TrophyOutlined,
   UserOutlined
 } from "@ant-design/icons";
-import { Avatar, Dropdown, Input, Popover } from "antd";
+import { Avatar, Badge, Dropdown, Input, Popover } from "antd";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { getDefaultRoute } from "../api/authStore";
@@ -42,6 +42,7 @@ export function PublicHeader({
   const [navData, setNavData] = useState({ categories: [], authors: [] });
   const [searchText, setSearchText] = useState(searchValue || "");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [cartCount, setCartCount] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -63,6 +64,32 @@ export function PublicHeader({
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadCartCount() {
+      if (session?.id && isReader) {
+        try {
+          const cart = await libraryGateway.getCart(session.id);
+          if (active) {
+            setCartCount(cart.length);
+          }
+        } catch (error) {
+          // Bỏ qua lỗi
+        }
+      }
+    }
+
+    loadCartCount();
+
+    window.addEventListener("cartUpdated", loadCartCount);
+
+    return () => {
+      active = false;
+      window.removeEventListener("cartUpdated", loadCartCount);
+    };
+  }, [session?.id, isReader]);
 
   useEffect(() => {
     setSearchText(searchValue || "");
@@ -143,11 +170,19 @@ export function PublicHeader({
           onClick: () => navigate("/reader")
         },
         {
-          key: "workspace",
-          icon: <DashboardOutlined />,
-          label: isReader ? "Phiếu mượn" : "Trang quản trị",
-          onClick: () => navigate(getDefaultRoute(session.role))
+          key: "orders",
+          icon: <ShoppingCartOutlined />,
+          label: "Phiếu mượn",
+          onClick: () => navigate("/reader?tab=orders")
         },
+        ...(isReader ? [] : [
+          {
+            key: "workspace",
+            icon: <DashboardOutlined />,
+            label: "Trang quản trị",
+            onClick: () => navigate(getDefaultRoute(session.role))
+          }
+        ]),
         {
           key: "notifications",
           icon: <BellOutlined />,
@@ -250,7 +285,9 @@ export function PublicHeader({
                 aria-label="Giỏ mượn"
                 onClick={() => goReaderTool("/cart")}
               >
-                <ShoppingCartOutlined />
+            <Badge count={cartCount} size="small">
+              <ShoppingCartOutlined />
+            </Badge>
               </button>
             </>
           ) : null}

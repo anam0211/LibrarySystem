@@ -1,6 +1,7 @@
 import {
   ApartmentOutlined,
   BarChartOutlined,
+  BellOutlined,
   BookOutlined,
   CreditCardOutlined,
   FileImageOutlined,
@@ -16,6 +17,7 @@ import {
 } from "@ant-design/icons";
 import { Button, Layout, Menu, Typography } from "antd";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 
 const { Content, Sider } = Layout;
 
@@ -31,7 +33,8 @@ const MENU_ITEMS = [
   { key: "/admin/reviews", label: "Review", icon: <MessageOutlined />, roles: ["ADMIN", "LIBRARIAN"] },
   { key: "/admin/fines", label: "Thu phạt", icon: <WalletOutlined />, roles: ["ADMIN", "LIBRARIAN"] },
   { key: "/reader", label: "Hồ sơ", icon: <ReadOutlined />, roles: ["READER"] },
-  { key: "/cart", label: "Giỏ mượn", icon: <ShoppingCartOutlined />, roles: ["READER"] }
+  { key: "/cart", label: "Giỏ mượn", icon: <ShoppingCartOutlined />, roles: ["READER"] },
+  { key: "/notifications", label: "Thông báo", icon: <BellOutlined />, roles: ["ADMIN", "LIBRARIAN", "READER"] }
 ];
 
 export default function AppLayout({ session, onLogout }) {
@@ -50,8 +53,10 @@ export default function AppLayout({ session, onLogout }) {
     <Layout className="app-layout">
       <Sider width={272} breakpoint="lg" collapsedWidth={0} className="app-sider">
         <div className="app-brand">
-          <strong>BookHub Console</strong>
-          <span>Quản lý thư viện</span>
+          <Link to="/" style={{ textDecoration: "none", color: "inherit", display: "flex", flexDirection: "column" }}>
+            <strong>BookHub Console</strong>
+            <span>Quản lý thư viện</span>
+          </Link>
         </div>
         <Menu
           mode="inline"

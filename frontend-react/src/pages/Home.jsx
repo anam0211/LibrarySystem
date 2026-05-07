@@ -19,7 +19,8 @@ import {
   Space,
   Spin,
   Tag,
-  message
+  message,
+  notification
 } from "antd";
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -92,6 +93,26 @@ function BookVisual({ book, large = false }) {
 
 function BookCard({ book, session, onBorrow }) {
   const available = Number(book.stockAvailable || 0) > 0;
+  const [status, setStatus] = useState("idle");
+
+  async function handleClick(e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!session) {
+      onBorrow(book);
+      return;
+    }
+
+    setStatus("loading");
+    try {
+      await onBorrow(book);
+      setStatus("added");
+      setTimeout(() => setStatus("idle"), 500);
+    } catch (error) {
+      setStatus("idle");
+    }
+  }
 
   return (
     <article className="showcase-card">
@@ -116,12 +137,13 @@ function BookCard({ book, session, onBorrow }) {
             <Button block>Chi tiết</Button>
           </Link>
           <Button
-            type="primary"
+            type={status === "added" ? "default" : "primary"}
             icon={<ShoppingCartOutlined />}
-            disabled={!available}
-            onClick={() => onBorrow(book)}
+            disabled={!available || status === "added"}
+            loading={status === "loading"}
+            onClick={handleClick}
           >
-            {session ? "Thêm giỏ" : "Đăng nhập"}
+            {!session ? "Đăng nhập" : status === "added" ? "Đã thêm" : "Thêm giỏ"}
           </Button>
         </div>
       </div>
@@ -139,6 +161,7 @@ export default function Home({ session, onLogout }) {
   const [facets, setFacets] = useState({ authors: [], categories: [], publishers: [] });
   const [featured, setFeatured] = useState([]);
   const [booksPage, setBooksPage] = useState(EMPTY_PAGE);
+  const [notifyApi, notifyContextHolder] = notification.useNotification();
 
   async function loadPage(nextFilters = DEFAULT_FILTERS) {
     setLoading(true);
@@ -194,9 +217,22 @@ export default function Home({ session, onLogout }) {
       return;
     }
 
-    await libraryGateway.addToCart(session.id, book.id);
-    message.success("Đã thêm sách vào giỏ mượn.");
-    navigate("/cart");
+    try {
+      await libraryGateway.addToCart(session.id, book.id);
+      notifyApi.success({
+        message: "Thêm giỏ thành công",
+        description: `Đã thêm "${book.title}" vào giỏ.`,
+        placement: "bottomRight"
+      });
+      window.dispatchEvent(new Event("cartUpdated"));
+    } catch (error) {
+      notifyApi.error({
+        message: "Không thể thêm vào giỏ",
+        description: error?.message || "Đã xảy ra lỗi khi thêm vào giỏ mượn.",
+        placement: "bottomRight"
+      });
+      throw error;
+    }
   }
 
   function handleKeywordSearch(keyword) {
@@ -241,6 +277,7 @@ export default function Home({ session, onLogout }) {
       onSearchSubmit={handleKeywordSearch}
       searchValue={filters.keyword}
     >
+      {notifyContextHolder}
       <section className="storefront-hero ecommerce-hero">
         <div className="storefront-hero-copy">
           <p className="eyebrow">BookHub Library E-Commerce</p>
