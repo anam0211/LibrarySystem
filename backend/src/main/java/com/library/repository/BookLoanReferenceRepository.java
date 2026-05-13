@@ -21,4 +21,19 @@ public class BookLoanReferenceRepository {
 
         return count == null ? 0 : count;
     }
+
+    public long countBorrowedCopiesByBookId(Integer bookId) {
+        Number count = jdbcTemplate.queryForObject(
+                """
+                select coalesce(sum(li.qty), 0)
+                from loan_items li
+                where li.book_id = ?
+                  and li.status = 'RETURNED'
+                """,
+                Number.class,
+                bookId
+        );
+
+        return count == null ? 0 : count.longValue();
+    }
 }

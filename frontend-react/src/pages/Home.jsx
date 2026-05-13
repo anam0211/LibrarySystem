@@ -2,13 +2,10 @@ import {
   FilterOutlined,
   LoginOutlined,
   RightOutlined,
-  SearchOutlined,
-  ShoppingCartOutlined,
-  StarFilled
+  SearchOutlined
 } from "@ant-design/icons";
 import {
   Button,
-  Card,
   Carousel,
   Col,
   Form,
@@ -26,6 +23,7 @@ import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { toAbsoluteMediaUrl } from "../api/apiClient";
 import { libraryGateway } from "../api/libraryGateway";
+import BookCard from "../components/BookCard";
 import PublicShell from "../components/PublicChrome";
 import { formatNumber } from "../components/formatters";
 
@@ -88,66 +86,6 @@ function BookVisual({ book, large = false }) {
       <span>{book.category}</span>
       <strong>{book.title}</strong>
     </div>
-  );
-}
-
-function BookCard({ book, session, onBorrow }) {
-  const available = Number(book.stockAvailable || 0) > 0;
-  const [status, setStatus] = useState("idle");
-
-  async function handleClick(e) {
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (!session) {
-      onBorrow(book);
-      return;
-    }
-
-    setStatus("loading");
-    try {
-      await onBorrow(book);
-      setStatus("added");
-      setTimeout(() => setStatus("idle"), 500);
-    } catch (error) {
-      setStatus("idle");
-    }
-  }
-
-  return (
-    <article className="showcase-card">
-      <Link to={`/book/${book.id}`} className="showcase-cover-link">
-        <BookVisual book={book} />
-      </Link>
-
-      <div className="showcase-body">
-        <div className="showcase-badges">
-          <Tag color={available ? "green" : "red"}>{available ? "Còn sách" : "Hết sách"}</Tag>
-          <Tag>{book.category}</Tag>
-        </div>
-
-        <h3>{book.title}</h3>
-        <p className="subtle">{(book.authors || []).join(", ")}</p>
-        <p className="mini">
-          <StarFilled style={{ color: "#f5a623" }} /> {book.rating} / {formatNumber(book.borrowCount)} lượt mượn
-        </p>
-
-        <div className="catalog-card-actions">
-          <Link to={`/book/${book.id}`}>
-            <Button block>Chi tiết</Button>
-          </Link>
-          <Button
-            type={status === "added" ? "default" : "primary"}
-            icon={<ShoppingCartOutlined />}
-            disabled={!available || status === "added"}
-            loading={status === "loading"}
-            onClick={handleClick}
-          >
-            {!session ? "Đăng nhập" : status === "added" ? "Đã thêm" : "Thêm giỏ"}
-          </Button>
-        </div>
-      </div>
-    </article>
   );
 }
 
@@ -214,7 +152,7 @@ export default function Home({ session, onLogout }) {
   async function handleBorrow(book) {
     if (!session) {
       navigate("/login");
-      return;
+      return false;
     }
 
     try {
@@ -225,6 +163,7 @@ export default function Home({ session, onLogout }) {
         placement: "bottomRight"
       });
       window.dispatchEvent(new Event("cartUpdated"));
+      return true;
     } catch (error) {
       notifyApi.error({
         message: "Không thể thêm vào giỏ",
@@ -280,11 +219,10 @@ export default function Home({ session, onLogout }) {
       {notifyContextHolder}
       <section className="storefront-hero ecommerce-hero">
         <div className="storefront-hero-copy">
-          <p className="eyebrow">BookHub Library E-Commerce</p>
+          <p className="eyebrow">BookHub Online Library</p>
           <h1>Mượn sách như đặt hàng online</h1>
           <p className="subtle">
-            Tìm sách, thêm vào giỏ mượn, chọn nhận tại quầy hoặc giao tận nhà, theo dõi trạng thái và thanh toán phạt
-            ngay trên hồ sơ bạn đọc.
+            Tìm sách, thêm vào giỏ, chọn nhận tại quầy hoặc giao tận nhà.
           </p>
 
           <div className="actions">
@@ -296,7 +234,7 @@ export default function Home({ session, onLogout }) {
               icon={session ? <RightOutlined /> : <LoginOutlined />}
               onClick={() => navigate(session ? "/reader" : "/login")}
             >
-              {session ? "Tài khoản của tôi" : "Đăng nhập demo"}
+              Tài khoản của tôi
             </Button>
           </div>
         </div>
@@ -408,7 +346,7 @@ export default function Home({ session, onLogout }) {
             <>
               <div className="showcase-grid">
                 {booksPage.items.map((book) => (
-                  <BookCard key={book.id} book={book} session={session} onBorrow={handleBorrow} />
+                  <BookCard key={book.id} book={book} onAction={handleBorrow} />
                 ))}
               </div>
 

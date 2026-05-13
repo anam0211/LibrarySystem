@@ -1,6 +1,7 @@
 package com.library.repository;
 
 import com.library.entity.Notification;
+import com.library.entity.NotificationType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -12,4 +13,6 @@ public interface NotificationRepository extends JpaRepository<Notification, Inte
     List<Notification> findByUserIdOrderByCreatedAtDesc(Integer userId);
     
     List<Notification> findByUserIdAndReadAtIsNull(Integer userId);
+
+    boolean existsByUserIdAndTypeAndRelatedLoanId(Integer userId, NotificationType type, Integer relatedLoanId);
 }

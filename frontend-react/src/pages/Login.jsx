@@ -1,20 +1,9 @@
 import {
-  BookOutlined,
-  SafetyOutlined,
-  TeamOutlined,
-  UserOutlined
-} from "@ant-design/icons";
-import {
   Button,
   Card,
-  Col,
   Form,
   Input,
-  List,
-  Row,
-  Space,
   Tabs,
-  Tag,
   Typography,
   message
 } from "antd";
@@ -22,12 +11,6 @@ import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { getDefaultRoute, normalizeSession, writeSession } from "../api/authStore";
 import { libraryGateway } from "../api/libraryGateway";
-
-const DEMO_ACCOUNTS = [
-  { title: "Admin", email: "admin@library.com", password: "123456", icon: <SafetyOutlined /> },
-  { title: "Thủ thư", email: "librarian@library.com", password: "123456", icon: <TeamOutlined /> },
-  { title: "Độc giả", email: "reader1@library.com", password: "123456", icon: <UserOutlined /> }
-];
 
 export default function Login({ onLogin }) {
   const navigate = useNavigate();
@@ -40,7 +23,7 @@ export default function Login({ onLogin }) {
     const session = normalizeSession(rawSession);
     writeSession(session);
     onLogin(session);
-    message.success("Đăng nhập mock thành công.");
+    message.success("Đăng nhập thành công.");
     navigate(location.state?.from?.pathname || getDefaultRoute(session.role), { replace: true });
   }
 
@@ -73,60 +56,12 @@ export default function Login({ onLogin }) {
   return (
     <div className="login-shell">
       <section className="login-stage">
-        <Tag color="blue" style={{ width: "fit-content", borderRadius: 999 }}>
-          Frontend-first mock mode
-        </Tag>
         <Typography.Title level={1} style={{ marginTop: 18, marginBottom: 12 }}>
           BookHub Library E-Commerce
         </Typography.Title>
         <Typography.Paragraph style={{ maxWidth: 680, fontSize: 16 }}>
-          Demo chạy độc lập bằng dữ liệu giả ở frontend: thẻ thư viện điện tử, e-KYC, giỏ mượn,
-          giao sách tận nhà, review, leaderboard và thu phạt.
+          Đăng nhập để quản lý hồ sơ bạn đọc, giỏ mượn, đơn mượn, thông báo và các nghiệp vụ thư viện.
         </Typography.Paragraph>
-
-        <Row gutter={[16, 16]} style={{ marginTop: 28 }}>
-          <Col xs={24} md={12}>
-            <Card className="glass-card" style={{ height: "100%" }}>
-              <Space direction="vertical" size={12}>
-                <Tag color="blue" icon={<BookOutlined />}>
-                  Không cần backend
-                </Tag>
-                <Typography.Title level={4} style={{ margin: 0 }}>
-                  Dữ liệu được lưu ở localStorage
-                </Typography.Title>
-                <Typography.Paragraph style={{ margin: 0 }}>
-                  Sau khi chốt UI/UX, mock service này có thể thay bằng API Spring Boot theo cùng luồng nghiệp vụ.
-                  Tài khoản demo mock data có thể mượn sách và thêm giỏ hàng,...
-                  reader2@library.com
-                  123456
-                </Typography.Paragraph>
-              </Space>
-            </Card>
-          </Col>
-          <Col xs={24} md={12}>
-            <Card className="glass-card" style={{ height: "100%" }}>
-              <Typography.Title level={4}>Tài khoản demo</Typography.Title>
-              <List
-                dataSource={DEMO_ACCOUNTS}
-                renderItem={(account) => (
-                  <List.Item
-                    actions={[
-                      <Button type="link" onClick={() => loginForm.setFieldsValue(account)}>
-                        Điền nhanh
-                      </Button>
-                    ]}
-                  >
-                    <List.Item.Meta
-                      avatar={account.icon}
-                      title={account.title}
-                      description={`${account.email} / ${account.password}`}
-                    />
-                  </List.Item>
-                )}
-              />
-            </Card>
-          </Col>
-        </Row>
       </section>
 
       <Card className="glass-card login-form-card">
@@ -144,7 +79,7 @@ export default function Login({ onLogin }) {
                     <Input.Password size="large" />
                   </Form.Item>
                   <Button type="primary" htmlType="submit" size="large" loading={busy === "login"} block>
-                    Đăng nhập vào demo
+                    Đăng nhập
                   </Button>
                 </Form>
               )

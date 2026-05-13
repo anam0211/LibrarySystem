@@ -24,7 +24,7 @@ import lombok.RequiredArgsConstructor;
 @RestController
 @RequestMapping("/api/v1/admin/loans")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyRole('ADMIN','LIBRARIAN')")
+@PreAuthorize("hasRole('LIBRARIAN')")
 public class AdminLoanController {
 
     private final LoanService loanService;

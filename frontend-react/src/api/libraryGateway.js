@@ -1,19 +1,13 @@
 import { toAbsoluteMediaUrl } from "./apiClient";
 import { libraryApi } from "./libraryApi";
-import { mockLibrary } from "../mocks/mockLibrary";
 
 const COVER_TONES = ["#315068", "#5a6f46", "#6f4f7a", "#9a6b35", "#317a59", "#3c6f91", "#8b4f5f"];
-const ENABLE_MOCKS = import.meta.env.VITE_ENABLE_MOCKS === "true";
 
-async function useBackend(backendCall, fallbackCall) {
+async function useBackend(backendCall) {
   try {
     return await backendCall();
   } catch (error) {
-    if (!ENABLE_MOCKS || typeof fallbackCall !== "function") {
-      throw error;
-    }
-
-    return fallbackCall();
+    throw error;
   }
 }
 
@@ -42,6 +36,7 @@ function normalizeBook(rawBook = {}, index = 0) {
   const category = rawBook.category || rawBook.primaryCategoryName || categories[0] || "Chưa phân loại";
   const stockTotal = Number(rawBook.stockTotal ?? rawBook.totalStock ?? 0);
   const stockAvailable = Number(rawBook.stockAvailable ?? rawBook.availableStock ?? 0);
+  const status = rawBook.status || "ACTIVE";
 
   return {
     id: Number(rawBook.id),
@@ -52,19 +47,49 @@ function normalizeBook(rawBook = {}, index = 0) {
     category,
     publisher: rawBook.publisherName || rawBook.publisher?.name || rawBook.publisher || "Chưa có NXB",
     publishYear: rawBook.publishYear || rawBook.year || "",
+    status,
     language: rawBook.language || rawBook.languageCode || "vi",
     pages: rawBook.pages || rawBook.pageCount || 0,
     stockTotal,
     stockAvailable,
-    rating: Number(rawBook.rating || rawBook.averageRating || 4.5),
-    borrowCount: Number(rawBook.borrowCount || rawBook.loanCount || 0),
-    favoriteCount: Number(rawBook.favoriteCount || 0),
+    rating: Number(rawBook.rating ?? rawBook.averageRating ?? 0),
+    borrowCount: Number(
+      rawBook.borrowCount
+      ?? rawBook.loanCount
+      ?? rawBook.borrowedCount
+      ?? rawBook.totalBorrowCount
+      ?? 0
+    ),
+    favoriteCount: Number(rawBook.favoriteCount ?? rawBook.wishlistCount ?? 0),
     featured: Boolean(rawBook.featured),
     coverTone: rawBook.coverTone || COVER_TONES[index % COVER_TONES.length],
     description: rawBook.description || "Chưa có mô tả chi tiết cho đầu sách này.",
     reviews: Array.isArray(rawBook.reviews) ? rawBook.reviews : [],
     primaryImageUrl: rawBook.primaryImageUrl || rawBook.coverUrl || rawBook.imageUrl || ""
   };
+}
+
+function resolvePrimaryImageUrl(item = {}) {
+  const media = Array.isArray(item.media)
+    ? item.media
+    : Array.isArray(item.images)
+      ? item.images
+      : Array.isArray(item.book?.media)
+        ? item.book.media
+        : Array.isArray(item.book?.images)
+          ? item.book.images
+          : [];
+  const primaryAsset = media.find((asset) => asset.primary || asset.isPrimary) || media[0];
+
+  return item.primaryImageUrl
+    || item.coverUrl
+    || item.imageUrl
+    || item.book?.primaryImageUrl
+    || item.book?.coverUrl
+    || item.book?.imageUrl
+    || primaryAsset?.fileUrl
+    || primaryAsset?.url
+    || "";
 }
 
 function normalizeMedia(asset = {}) {
@@ -337,15 +362,31 @@ function sortBooks(books, field) {
 
 function normalizeCartBook(item = {}, index = 0) {
   if (item.title && !item.bookId) {
-    return normalizeBook(item, index);
+    return normalizeBook({
+      ...item,
+      primaryImageUrl: resolvePrimaryImageUrl(item)
+    }, index);
   }
 
+  const rawBook = item.book || {};
+
   return normalizeBook({
-    id: item.bookId || item.id,
-    title: item.title || item.bookTitle,
-    stockAvailable: item.stockAvailable,
-    authors: item.authors,
-    primaryImageUrl: item.primaryImageUrl
+    id: item.bookId || rawBook.id || item.id,
+    title: item.title || item.bookTitle || rawBook.title,
+    description: item.description || rawBook.description,
+    publisherName: item.publisherName || rawBook.publisherName,
+    publisher: item.publisher || rawBook.publisher,
+    publishYear: item.publishYear || rawBook.publishYear,
+    category: item.category || rawBook.category,
+    stockAvailable: item.stockAvailable ?? rawBook.stockAvailable,
+    averageRating: item.averageRating ?? rawBook.averageRating,
+    rating: item.rating ?? rawBook.rating,
+    borrowCount: item.borrowCount ?? rawBook.borrowCount,
+    favoriteCount: item.favoriteCount ?? rawBook.favoriteCount,
+    loanCount: item.loanCount ?? rawBook.loanCount,
+    status: item.status ?? rawBook.status,
+    authors: item.authors || rawBook.authors,
+    primaryImageUrl: resolvePrimaryImageUrl(item)
   }, index);
 }
 
@@ -397,8 +438,7 @@ export const libraryGateway = {
           studentCode: me?.studentCode || authResponse?.studentCode || "",
           kycStatus: normalizeKycStatus(me?.kycStatus || me?.verificationStatus || authResponse?.kycStatus)
         };
-      },
-      () => mockLibrary.login(values)
+      }
     );
   },
 
@@ -407,10 +447,6 @@ export const libraryGateway = {
       async () => {
         await libraryApi.auth.register(values);
         return this.login({ email: values.email, password: values.password });
-      },
-      () => {
-        const user = mockLibrary.register(values);
-        return { token: `mock-token-${user.id}`, ...user };
       }
     );
   },
@@ -428,15 +464,13 @@ export const libraryGateway = {
           ...(kyc || {}),
           accountEmail: me?.email || ""
         });
-      },
-      () => normalizeUser(mockLibrary.getUser(userId))
+      }
     );
   },
 
   async listUsers() {
     return useBackend(
-      async () => (await libraryApi.users.list()).map(normalizeUser),
-      () => mockLibrary.listUsers().map(normalizeUser)
+      async () => (await libraryApi.users.list()).map(normalizeUser)
     );
   },
 
@@ -445,15 +479,13 @@ export const libraryGateway = {
       async () => {
         const users = await libraryApi.users.kycUsers();
         return Array.isArray(users) ? users.map(normalizeUser) : [];
-      },
-      () => mockLibrary.listUsers().map(normalizeUser)
+      }
     );
   },
 
   async approveKyc(userId) {
     return useBackend(
-      async () => libraryApi.users.approveKyc(userId),
-      () => mockLibrary.approveKyc(userId)
+      async () => libraryApi.users.approveKyc(userId)
     );
   },
 
@@ -462,15 +494,13 @@ export const libraryGateway = {
       async () => {
         const users = await libraryApi.users.pendingKyc();
         return Array.isArray(users) ? users.map(normalizeUser) : [];
-      },
-      () => mockLibrary.listUsers().filter((user) => user.kycStatus === "PENDING").map(normalizeUser)
+      }
     );
   },
 
   async rejectKyc(userId) {
     return useBackend(
-      async () => libraryApi.users.rejectKyc(userId),
-      () => mockLibrary.rejectKyc(userId)
+      async () => libraryApi.users.rejectKyc(userId)
     );
   },
 
@@ -513,8 +543,7 @@ export const libraryGateway = {
           : await libraryApi.books.list(filters);
 
         return normalizePage(pageData, filters);
-      },
-      () => mockLibrary.listBooks(filters)
+      }
     );
   },
 
@@ -530,8 +559,7 @@ export const libraryGateway = {
           ...book,
           reviews: Array.isArray(reviews) ? reviews.map(normalizeReview) : []
         });
-      },
-      () => mockLibrary.getBook(bookId)
+      }
     );
   },
 
@@ -540,8 +568,7 @@ export const libraryGateway = {
       async () => {
         const media = await libraryApi.media.byBook(bookId);
         return Array.isArray(media) ? media.map(normalizeMedia) : [];
-      },
-      () => []
+      }
     );
   },
 
@@ -559,8 +586,7 @@ export const libraryGateway = {
           categories: categories.map(normalizeOption),
           publishers: publishers.map(normalizeOption)
         };
-      },
-      () => mockLibrary.getFacets()
+      }
     );
   },
 
@@ -575,15 +601,13 @@ export const libraryGateway = {
           rated: sortBooks(books, "rating"),
           favorite: sortBooks(books, "favoriteCount")
         };
-      },
-      () => mockLibrary.getLeaderboards()
+      }
     );
   },
 
   async getFeaturedBooks() {
     return useBackend(
-      async () => (await libraryApi.books.featured(6)).map(normalizeBook),
-      () => mockLibrary.getFeaturedBooks()
+      async () => (await libraryApi.books.featured(6)).map(normalizeBook)
     );
   },
 
@@ -593,15 +617,13 @@ export const libraryGateway = {
         await libraryApi.wishlists.toggle(userId, bookId);
         const wishlist = await libraryApi.wishlists.list(userId);
         return wishlist.map(normalizeCartBook).map((book) => book.id);
-      },
-      () => mockLibrary.toggleWishlist(userId, bookId)
+      }
     );
   },
 
   async getWishlist(userId) {
     return useBackend(
-      async () => (await libraryApi.wishlists.list(userId)).map(normalizeCartBook),
-      () => mockLibrary.getWishlist(userId)
+      async () => (await libraryApi.wishlists.list(userId)).map(normalizeCartBook)
     );
   },
 
@@ -611,43 +633,37 @@ export const libraryGateway = {
         userId: review.userId,
         rating: review.rating,
         comment: review.content || review.comment
-      })),
-      () => mockLibrary.addReview(bookId, review)
+      }))
     );
   },
 
   async listReviews() {
     return useBackend(
-      async () => (await libraryApi.reviews.listAll()).map(normalizeReview),
-      () => mockLibrary.listReviews()
+      async () => (await libraryApi.reviews.listAll()).map(normalizeReview)
     );
   },
 
   async setReviewHidden(reviewId, hidden) {
     return useBackend(
-      async () => normalizeReview(await libraryApi.reviews.setHidden(reviewId, hidden)),
-      () => mockLibrary.setReviewHidden(reviewId, hidden)
+      async () => normalizeReview(await libraryApi.reviews.setHidden(reviewId, hidden))
     );
   },
 
   async getCart(userId) {
     return useBackend(
-      async () => (await libraryApi.cart.list(userId)).map(normalizeCartBook),
-      () => mockLibrary.getCart(userId)
+      async () => (await libraryApi.cart.list(userId)).map(normalizeCartBook)
     );
   },
 
   async addToCart(userId, bookId) {
     return useBackend(
-      async () => libraryApi.cart.addBook(userId, bookId),
-      () => mockLibrary.addToCart(userId, bookId)
+      async () => libraryApi.cart.addBook(userId, bookId)
     );
   },
 
   async removeFromCart(userId, bookId) {
     return useBackend(
-      async () => libraryApi.cart.removeBook(userId, bookId),
-      () => mockLibrary.removeFromCart(userId, bookId)
+      async () => libraryApi.cart.removeBook(userId, bookId)
     );
   },
 
@@ -683,8 +699,7 @@ export const libraryGateway = {
           deliveryPhone: values.phone,
           status: "PENDING"
         });
-      },
-      () => mockLibrary.checkout(userId, values)
+      }
     );
   },
 
@@ -693,8 +708,7 @@ export const libraryGateway = {
       async () => {
         const loans = userId ? await libraryApi.circulation.history(userId) : await libraryApi.circulation.recent();
         return Array.isArray(loans) ? loans.map((loan) => normalizeLoan(loan)) : [];
-      },
-      () => mockLibrary.listLoans(userId)
+      }
     );
   },
 
@@ -703,15 +717,13 @@ export const libraryGateway = {
       async () => {
         await libraryApi.loans.updateAdminStatus(loanId, status);
         return normalizeLoan({ id: loanId, status });
-      },
-      () => mockLibrary.moveLoan(loanId, status)
+      }
     );
   },
 
   async requestReturn(loanId) {
     return useBackend(
-      async () => normalizeLoan({ id: await libraryApi.loans.requestReturn(loanId), status: "RETURNING" }),
-      () => mockLibrary.moveLoan(loanId, "RETURNING")
+      async () => normalizeLoan({ id: await libraryApi.loans.requestReturn(loanId), status: "RETURNING" })
     );
   },
 
@@ -720,57 +732,49 @@ export const libraryGateway = {
       async () => {
         const fines = userId ? await libraryApi.fines.byUser(userId) : await libraryApi.fines.list();
         return Array.isArray(fines) ? fines.map(normalizeFine) : [];
-      },
-      () => mockLibrary.listFines(userId)
+      }
     );
   },
 
   async payFine(fineId) {
     return useBackend(
-      async () => normalizeFine(await libraryApi.fines.markPaid(fineId)),
-      () => mockLibrary.payFine(fineId)
+      async () => normalizeFine(await libraryApi.fines.markPaid(fineId))
     );
   },
 
   async collectFine(fineId) {
     return useBackend(
-      async () => normalizeFine(await libraryApi.fines.markPaid(fineId)),
-      () => mockLibrary.collectFine(fineId)
+      async () => normalizeFine(await libraryApi.fines.markPaid(fineId))
     );
   },
 
   async listAddresses(userId) {
     return useBackend(
-      async () => libraryApi.addresses.byUser(userId),
-      () => []
+      async () => libraryApi.addresses.byUser(userId)
     );
   },
 
   async saveAddress(userId, values) {
     return useBackend(
-      async () => libraryApi.addresses.save(userId, values),
-      () => values
+      async () => libraryApi.addresses.save(userId, values)
     );
   },
 
   async removeAddress(addressId) {
     return useBackend(
-      async () => libraryApi.addresses.remove(addressId),
-      () => null
+      async () => libraryApi.addresses.remove(addressId)
     );
   },
 
   async listSystemConfigs() {
     return useBackend(
-      async () => libraryApi.systemConfigs.list(),
-      () => []
+      async () => libraryApi.systemConfigs.list()
     );
   },
 
   async saveSystemConfig(key, values) {
     return useBackend(
-      async () => libraryApi.systemConfigs.upsert(key, values),
-      () => ({ configKey: key, ...values })
+      async () => libraryApi.systemConfigs.upsert(key, values)
     );
   }
 };

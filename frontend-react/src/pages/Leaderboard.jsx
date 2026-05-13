@@ -80,9 +80,6 @@ export default function Leaderboard({ session, onLogout }) {
           <div>
             <p className="page-eyebrow">Leaderboard</p>
             <h1 className="page-title">Bảng xếp hạng thư viện</h1>
-            <p className="page-copy">
-              Tách riêng khỏi trang chủ để người đọc xem nhanh các đầu sách đang được mượn, đánh giá và yêu thích nhiều.
-            </p>
           </div>
         </div>
 

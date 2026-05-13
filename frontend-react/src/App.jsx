@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { clearSession, getDefaultRoute, readSession } from "./api/authStore";
 import AppLayout from "./components/AppLayout";
 import ProtectedRoute from "./components/ProtectedRoute";
+import ReaderLayout from "./components/ReaderLayout";
 import AdminFines from "./pages/AdminFines";
 import AdminKyc from "./pages/AdminKyc";
 import AdminReviews from "./pages/AdminReviews";
@@ -16,18 +17,42 @@ import Dashboard from "./pages/Dashboard";
 import Home from "./pages/Home";
 import Leaderboard from "./pages/Leaderboard";
 import Login from "./pages/Login";
+import LoanWorkflow from "./pages/LoanWorkflow";
 import Media from "./pages/Media";
 import Publishers from "./pages/Publishers";
-import Reader from "./pages/Reader";
+import Reader, { ReaderCard, ReaderFavorites, ReaderFines, ReaderOrders, ReaderReturns } from "./pages/Reader";
 import Notifications from "./pages/Notifications";
 import Users from "./pages/Users";
 
 function ScrollToTop() {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
 
-  useEffect(() => {
-    window.scrollTo({ top: 0, left: 0 });
-  }, [pathname]);
+  useLayoutEffect(() => {
+    if ("scrollRestoration" in window.history) {
+      window.history.scrollRestoration = "manual";
+    }
+
+    const root = document.documentElement;
+    const previousBehavior = root.style.scrollBehavior;
+
+    function resetScroll() {
+      root.style.scrollBehavior = "auto";
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      root.scrollTop = 0;
+      document.body.scrollTop = 0;
+    }
+
+    resetScroll();
+    const frame = window.requestAnimationFrame(() => {
+      resetScroll();
+      root.style.scrollBehavior = previousBehavior;
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      root.style.scrollBehavior = previousBehavior;
+    };
+  }, [pathname, search]);
 
   return null;
 }
@@ -68,39 +93,84 @@ export default function App() {
 
         <Route
           element={
+            <ProtectedRoute session={session} roles={["READER"]}>
+              <ReaderLayout session={session} onLogout={handleLogout} />
+            </ProtectedRoute>
+          }
+        >
+          <Route
+            path="/reader"
+            element={<Reader session={session} onSessionUpdate={handleLogin} />}
+          />
+          <Route
+            path="/reader/orders"
+            element={<ReaderOrders session={session} />}
+          />
+          <Route
+            path="/reader/returns"
+            element={<ReaderReturns session={session} />}
+          />
+          <Route
+            path="/reader/fines"
+            element={<ReaderFines session={session} />}
+          />
+          <Route
+            path="/reader/favorites"
+            element={<ReaderFavorites session={session} />}
+          />
+          <Route
+            path="/reader/card"
+            element={<ReaderCard session={session} onSessionUpdate={handleLogin} />}
+          />
+          <Route
+            path="/reader/cart"
+            element={<Cart session={session} onLogout={handleLogout} />}
+          />
+          <Route
+            path="/reader/notifications"
+            element={<Notifications />}
+          />
+        </Route>
+
+        <Route
+          element={
             <ProtectedRoute session={session}>
               <AppLayout session={session} onLogout={handleLogout} />
             </ProtectedRoute>
           }
         >
           <Route
-            path="/reader"
-            element={
-              <ProtectedRoute session={session} roles={["READER", "ADMIN", "LIBRARIAN"]}>
-                <Reader session={session} onSessionUpdate={handleLogin} />
-              </ProtectedRoute>
-            }
-          />
-          <Route
             path="/cart"
-            element={
-              <ProtectedRoute session={session} roles={["READER"]}>
-                <Cart session={session} onLogout={handleLogout} />
-              </ProtectedRoute>
-            }
+            element={<Navigate to="/reader/cart" replace />}
           />
           <Route
             path="/dashboard"
             element={
-              <ProtectedRoute session={session} roles={["ADMIN", "LIBRARIAN"]}>
+              <ProtectedRoute session={session} roles={["ADMIN"]}>
                 <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/loans/pickup"
+            element={
+              <ProtectedRoute session={session} roles={["LIBRARIAN"]}>
+                <LoanWorkflow mode="PICKUP" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/loans/delivery"
+            element={
+              <ProtectedRoute session={session} roles={["LIBRARIAN"]}>
+                <LoanWorkflow mode="DELIVERY" />
               </ProtectedRoute>
             }
           />
           <Route
             path="/admin/kyc"
             element={
-              <ProtectedRoute session={session} roles={["ADMIN", "LIBRARIAN"]}>
+              <ProtectedRoute session={session} roles={["LIBRARIAN"]}>
                 <AdminKyc />
               </ProtectedRoute>
             }
@@ -108,7 +178,7 @@ export default function App() {
           <Route
             path="/admin/reviews"
             element={
-              <ProtectedRoute session={session} roles={["ADMIN", "LIBRARIAN"]}>
+              <ProtectedRoute session={session} roles={["LIBRARIAN"]}>
                 <AdminReviews />
               </ProtectedRoute>
             }
@@ -116,7 +186,7 @@ export default function App() {
           <Route
             path="/admin/fines"
             element={
-              <ProtectedRoute session={session} roles={["ADMIN", "LIBRARIAN"]}>
+              <ProtectedRoute session={session} roles={["LIBRARIAN"]}>
                 <AdminFines />
               </ProtectedRoute>
             }
@@ -124,7 +194,7 @@ export default function App() {
           <Route
             path="/books"
             element={
-              <ProtectedRoute session={session} roles={["ADMIN", "LIBRARIAN"]}>
+              <ProtectedRoute session={session} roles={["ADMIN"]}>
                 <Books />
               </ProtectedRoute>
             }
@@ -132,7 +202,7 @@ export default function App() {
           <Route
             path="/authors"
             element={
-              <ProtectedRoute session={session} roles={["ADMIN", "LIBRARIAN"]}>
+              <ProtectedRoute session={session} roles={["ADMIN"]}>
                 <Authors />
               </ProtectedRoute>
             }
@@ -140,7 +210,7 @@ export default function App() {
           <Route
             path="/categories"
             element={
-              <ProtectedRoute session={session} roles={["ADMIN", "LIBRARIAN"]}>
+              <ProtectedRoute session={session} roles={["ADMIN"]}>
                 <Categories />
               </ProtectedRoute>
             }
@@ -148,7 +218,7 @@ export default function App() {
           <Route
             path="/publishers"
             element={
-              <ProtectedRoute session={session} roles={["ADMIN", "LIBRARIAN"]}>
+              <ProtectedRoute session={session} roles={["ADMIN"]}>
                 <Publishers />
               </ProtectedRoute>
             }
@@ -156,7 +226,7 @@ export default function App() {
           <Route
             path="/media"
             element={
-              <ProtectedRoute session={session} roles={["ADMIN", "LIBRARIAN"]}>
+              <ProtectedRoute session={session} roles={["ADMIN"]}>
                 <Media />
               </ProtectedRoute>
             }
@@ -164,17 +234,17 @@ export default function App() {
           <Route
             path="/users"
             element={
-              <ProtectedRoute session={session} roles={["ADMIN"]}>
+              <ProtectedRoute session={session} roles={["ADMIN", "LIBRARIAN"]}>
                 <Users />
               </ProtectedRoute>
             }
           />
-          <Route path="/operations" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/operations" element={<Navigate to="/loans/pickup" replace />} />
         <Route
           path="/notifications"
           element={
-            <ProtectedRoute session={session}>
-              <Notifications />
+            <ProtectedRoute session={session} roles={session?.role === "READER" ? undefined : ["LIBRARIAN"]}>
+              {session?.role === "READER" ? <Navigate to="/reader/notifications" replace /> : <Notifications />}
             </ProtectedRoute>
           }
         />

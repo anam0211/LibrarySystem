@@ -92,7 +92,8 @@ export default function BookDetail({ session, onLogout }) {
     );
   }
 
-  const available = Number(book.stockAvailable || 0) > 0;
+  const isArchived = book.status === "ARCHIVED";
+  const available = !isArchived && Number(book.stockAvailable || 0) > 0;
   const liked = wishlist.includes(book.id);
   const coverAsset = media.find((asset) => asset.primary && isImage(asset)) || media.find(isImage);
   const coverUrl = toAbsoluteMediaUrl(coverAsset?.fileUrl || book.primaryImageUrl);
@@ -166,7 +167,9 @@ export default function BookDetail({ session, onLogout }) {
             <div className="detail-stack">
               <div className="book-detail-heading">
                 <div className="showcase-badges">
-                  <Tag color={available ? "green" : "red"}>{available ? "Còn sách" : "Hết sách"}</Tag>
+                  <Tag color={isArchived ? "default" : available ? "green" : "red"}>
+                    {isArchived ? "Ngừng mượn" : available ? "Còn sách" : "Hết sách"}
+                  </Tag>
                   <Tag>{book.category}</Tag>
                 </div>
                 <Typography.Title level={1} style={{ margin: 0 }}>
@@ -211,7 +214,7 @@ export default function BookDetail({ session, onLogout }) {
                   loading={cartStatus === "loading"}
                   onClick={handleAddToCart}
                 >
-                  {!session ? "Đăng nhập" : cartStatus === "added" ? "Đã thêm" : "Thêm giỏ"}
+                  {!session ? "Đăng nhập" : isArchived ? "Ngừng mượn" : cartStatus === "added" ? "Đã thêm" : "Thêm giỏ"}
                 </Button>
                 <Button
                   size="large"

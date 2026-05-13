@@ -59,6 +59,10 @@ export function getDefaultRoute(role) {
     return "/reader";
   }
 
+  if (role === "LIBRARIAN") {
+    return "/loans/pickup";
+  }
+
   if (role === "ADMIN") {
     return "/dashboard";
   }

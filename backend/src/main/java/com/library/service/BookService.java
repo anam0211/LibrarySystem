@@ -19,6 +19,7 @@ import com.library.entity.Category;
 import com.library.repository.CategoryRepository;
 import com.library.entity.Publisher;
 import com.library.repository.PublisherRepository;
+import com.library.repository.WishlistRepository;
 import jakarta.transaction.Transactional;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -44,6 +45,7 @@ public class BookService {
     BookCategoryRepository bookCategoryRepository;
     BookImageRepository bookImageRepository;
     BookLoanReferenceRepository bookLoanReferenceRepository;
+    WishlistRepository wishlistRepository;
     MediaService mediaService;
 
     public PagedResult<BookResponseDTO> getBooks(
@@ -52,17 +54,20 @@ public class BookService {
             Integer categoryId,
             Integer publisherId,
             Integer publishYear,
+            String status,
             Boolean available,
             String sortBy,
             String sortDir,
             int page,
             int size) {
         List<Book> books = bookRepository.findAll(resolveSort(sortBy, sortDir));
+        BookStatus statusFilter = resolveStatusFilter(status);
 
         List<Book> filteredBooks = books.stream()
                 .filter(book -> matchesKeyword(book, keyword))
                 .filter(book -> matchesPublisher(book, publisherId))
                 .filter(book -> matchesPublishYear(book, publishYear))
+                .filter(book -> matchesStatus(book, statusFilter))
                 .filter(book -> matchesAvailable(book, available))
                 .toList();
 
@@ -331,6 +336,11 @@ public class BookService {
         return publishYear == null || Objects.equals(book.getPublishYear(), publishYear);
     }
 
+    private boolean matchesStatus(Book book, BookStatus status) {
+        BookStatus bookStatus = book.getStatus() == null ? BookStatus.ACTIVE : book.getStatus();
+        return status == null || bookStatus == status;
+    }
+
     private boolean matchesAvailable(Book book, Boolean available) {
         if (available == null) {
             return true;
@@ -379,6 +389,8 @@ public class BookService {
                 .originalPrice(book.getOriginalPrice())
                 .averageRating(book.getAverageRating())
                 .reviewCount(book.getReviewCount())
+                .borrowCount(resolveBorrowCount(book.getId()))
+                .favoriteCount(resolveFavoriteCount(book.getId()))
                 .status(book.getStatus() != null ? book.getStatus().name() : null)
                 .available(Optional.ofNullable(book.getStockAvailable()).orElse(0) > 0)
                 .primaryImageUrl(primaryImage != null ? primaryImage.getFileUrl() : null)
@@ -397,6 +409,24 @@ public class BookService {
                 .createdAt(book.getCreatedAt())
                 .updatedAt(book.getUpdatedAt())
                 .build();
+    }
+
+    private Integer resolveBorrowCount(Integer bookId) {
+        if (bookId == null) {
+            return 0;
+        }
+
+        long count = bookLoanReferenceRepository.countBorrowedCopiesByBookId(bookId);
+        return count > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) count;
+    }
+
+    private Integer resolveFavoriteCount(Integer bookId) {
+        if (bookId == null) {
+            return 0;
+        }
+
+        long count = wishlistRepository.countByBook_Id(bookId);
+        return count > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) count;
     }
 
     private Sort resolveSort(String sortBy, String sortDir) {
@@ -422,6 +452,18 @@ public class BookService {
         } catch (IllegalArgumentException exception) {
             throw new AppException(BookErrorCode.BOOK_STATUS_INVALID);
         }
+    }
+
+    private BookStatus resolveStatusFilter(String status) {
+        if (status == null || status.isBlank()) {
+            return BookStatus.ACTIVE;
+        }
+
+        if ("ALL".equalsIgnoreCase(status.trim())) {
+            return null;
+        }
+
+        return resolveStatus(status);
     }
 
     private String trimToNull(String value) {

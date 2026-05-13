@@ -1,7 +1,6 @@
 import {
   BellOutlined,
   DashboardOutlined,
-  DownOutlined,
   HeartOutlined,
   HomeOutlined,
   LoginOutlined,
@@ -15,6 +14,7 @@ import { Avatar, Badge, Dropdown, Input, Popover } from "antd";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { getDefaultRoute } from "../api/authStore";
+import { libraryApi } from "../api/libraryApi";
 import { libraryGateway } from "../api/libraryGateway";
 
 function getInitials(session) {
@@ -39,31 +39,10 @@ export function PublicHeader({
   const location = useLocation();
   const isReader = session?.role === "READER";
   const showReaderTools = !session || isReader;
-  const [navData, setNavData] = useState({ categories: [], authors: [] });
   const [searchText, setSearchText] = useState(searchValue || "");
   const [searchOpen, setSearchOpen] = useState(false);
   const [cartCount, setCartCount] = useState(0);
-
-  useEffect(() => {
-    let active = true;
-
-    async function loadNavData() {
-      const facets = await libraryGateway.getFacets();
-
-      if (active) {
-        setNavData({
-          categories: facets.categories,
-          authors: facets.authors
-        });
-      }
-    }
-
-    loadNavData();
-
-    return () => {
-      active = false;
-    };
-  }, []);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -92,6 +71,39 @@ export function PublicHeader({
   }, [session?.id, isReader]);
 
   useEffect(() => {
+    let active = true;
+
+    async function loadUnreadCount() {
+      if (!session?.id) {
+        setUnreadCount(0);
+        return;
+      }
+
+      try {
+        const unreadNotifications = await libraryApi.notifications.unread(session.id);
+        if (active) {
+          setUnreadCount(Array.isArray(unreadNotifications) ? unreadNotifications.length : 0);
+        }
+      } catch {
+        if (active) {
+          setUnreadCount(0);
+        }
+      }
+    }
+
+    loadUnreadCount();
+
+    window.addEventListener("notificationUpdated", loadUnreadCount);
+    window.addEventListener("focus", loadUnreadCount);
+
+    return () => {
+      active = false;
+      window.removeEventListener("notificationUpdated", loadUnreadCount);
+      window.removeEventListener("focus", loadUnreadCount);
+    };
+  }, [session?.id, location.pathname]);
+
+  useEffect(() => {
     setSearchText(searchValue || "");
   }, [searchValue]);
 
@@ -114,7 +126,12 @@ export function PublicHeader({
   }
 
   function goReaderTool(path) {
-    navigate(session ? path : "/login");
+    if (!session) {
+      navigate("/login");
+      return;
+    }
+
+    navigate(isReader ? path : getDefaultRoute(session.role));
   }
 
   function handleSearchSubmit(event) {
@@ -141,26 +158,6 @@ export function PublicHeader({
     goCatalog();
   }
 
-  const categoryMenu = {
-    items: navData.categories.length
-      ? navData.categories.slice(0, 12).map((category) => ({
-          key: String(category.id),
-          label: category.name,
-          onClick: () => goCatalog({ categoryId: category.id })
-        }))
-      : [{ key: "empty", label: "Chưa có danh mục", disabled: true }]
-  };
-
-  const authorMenu = {
-    items: navData.authors.length
-      ? navData.authors.slice(0, 12).map((author) => ({
-          key: String(author.id),
-          label: author.name,
-          onClick: () => goCatalog({ authorId: author.id })
-        }))
-      : [{ key: "empty", label: "Chưa có tác giả", disabled: true }]
-  };
-
   const accountMenu = session
     ? [
         {
@@ -173,7 +170,7 @@ export function PublicHeader({
           key: "orders",
           icon: <ShoppingCartOutlined />,
           label: "Phiếu mượn",
-          onClick: () => navigate("/reader?tab=orders")
+          onClick: () => navigate("/reader/orders")
         },
         ...(isReader ? [] : [
           {
@@ -183,12 +180,6 @@ export function PublicHeader({
             onClick: () => navigate(getDefaultRoute(session.role))
           }
         ]),
-        {
-          key: "notifications",
-          icon: <BellOutlined />,
-          label: "Thông báo",
-          onClick: () => navigate("/notifications")
-        },
         {
           type: "divider"
         },
@@ -224,6 +215,12 @@ export function PublicHeader({
       <button className="public-nav-btn" type="button" onClick={() => goCatalog()}>
         Kho sách
       </button>
+      <button className="public-nav-btn" type="button" onClick={() => goReaderTool("/reader/orders")}>
+        Đơn mượn
+      </button>
+      <button className="public-nav-btn" type="button" onClick={() => goReaderTool("/reader/returns")}>
+        Trả sách
+      </button>
       <button
         className={`public-nav-btn ${location.pathname === "/leaderboard" ? "active" : ""}`}
         type="button"
@@ -231,16 +228,6 @@ export function PublicHeader({
       >
         <TrophyOutlined /> Xếp hạng
       </button>
-      <Dropdown menu={categoryMenu} trigger={["click"]}>
-        <button className="public-nav-btn" type="button">
-          Danh mục <DownOutlined />
-        </button>
-      </Dropdown>
-      <Dropdown menu={authorMenu} trigger={["click"]}>
-        <button className="public-nav-btn" type="button">
-          Tác giả <DownOutlined />
-        </button>
-      </Dropdown>
     </nav>
   );
 
@@ -275,19 +262,29 @@ export function PublicHeader({
                 className="public-icon-btn"
                 type="button"
                 aria-label="Yêu thích"
-                onClick={() => goReaderTool("/reader?tab=wishlist")}
+                onClick={() => goReaderTool("/reader/favorites")}
               >
                 <HeartOutlined />
               </button>
               <button
                 className="public-icon-btn"
                 type="button"
-                aria-label="Giỏ mượn"
-                onClick={() => goReaderTool("/cart")}
+                aria-label="Thông báo"
+                onClick={() => goReaderTool("/reader/notifications")}
               >
-            <Badge count={cartCount} size="small">
-              <ShoppingCartOutlined />
-            </Badge>
+                <Badge count={unreadCount} size="small">
+                  <BellOutlined />
+                </Badge>
+              </button>
+              <button
+                className="public-icon-btn"
+                type="button"
+                aria-label="Giỏ mượn"
+                onClick={() => goReaderTool("/reader/cart")}
+              >
+                <Badge count={cartCount} size="small">
+                  <ShoppingCartOutlined />
+                </Badge>
               </button>
             </>
           ) : null}

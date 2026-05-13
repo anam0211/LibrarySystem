@@ -42,6 +42,7 @@ public class SearchService {
             Integer categoryId,
             Integer publisherId,
             Integer publishYear,
+            String status,
             Boolean available,
             String sortBy,
             String sortDir,
@@ -50,7 +51,7 @@ public class SearchService {
         String normalizedKeyword = keyword == null ? "" : keyword.trim();
 
         if (normalizedKeyword.isEmpty()) {
-            return bookService.getBooks(null, authorId, categoryId, publisherId, publishYear, available, sortBy,
+            return bookService.getBooks(null, authorId, categoryId, publisherId, publishYear, status, available, sortBy,
                     sortDir, page, size);
         }
 
@@ -67,6 +68,7 @@ public class SearchService {
                     categoryId,
                     publisherId,
                     publishYear,
+                    status,
                     available,
                     normalizeSortBy(sortBy),
                     sortDir,
@@ -91,7 +93,7 @@ public class SearchService {
 
             return paginate(sortedBooks, page, size);
         } catch (DataAccessException exception) {
-            return bookService.getBooks(normalizedKeyword, authorId, categoryId, publisherId, publishYear, available,
+            return bookService.getBooks(normalizedKeyword, authorId, categoryId, publisherId, publishYear, status, available,
                     normalizeSortBy(sortBy), sortDir, page, size);
         }
     }

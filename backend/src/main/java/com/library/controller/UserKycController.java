@@ -13,18 +13,15 @@ import org.springframework.web.bind.annotation.CrossOrigin;
 import com.library.common.response.ApiResponse;
 import com.library.dto.request.UserKycRequestDTO;
 import com.library.dto.response.UserKycResponseDTO;
-import com.library.entity.Notification;
-import com.library.entity.NotificationChannel;
 import com.library.entity.NotificationType;
 import com.library.entity.Role;
 import com.library.entity.User;
 import com.library.entity.VerificationStatus;
-import com.library.repository.NotificationRepository;
 import com.library.repository.UserRepository;
+import com.library.service.NotificationService;
 import com.library.service.UserKycService;
 
 import lombok.RequiredArgsConstructor;
-import java.time.LocalDateTime;
 import java.util.List;
 
 @RestController
@@ -35,7 +32,7 @@ public class UserKycController {
 
     private final UserKycService userKycService;
     private final UserRepository userRepository;
-    private final NotificationRepository notificationRepository;
+    private final NotificationService notificationService;
 
     @PreAuthorize("isAuthenticated()")
     @GetMapping("/me/kyc")
@@ -64,14 +61,14 @@ public class UserKycController {
         if (user != null && oldStatus != VerificationStatus.PENDING) {
             List<User> admins = userRepository.findByRole(Role.ADMIN);
             for (User admin : admins) {
-                Notification notif = new Notification();
-                notif.setUserId(admin.getId());
-                notif.setSubject("Yêu cầu xác thực e-KYC");
-                notif.setBody("Bạn đọc " + user.getFullName() + " vừa gửi yêu cầu xác thực hồ sơ KYC. Vui lòng kiểm tra.");
-                notif.setType(NotificationType.GENERIC);
-                notif.setChannel(NotificationChannel.INAPP);
-                notif.setScheduledAt(LocalDateTime.now());
-                notificationRepository.save(notif);
+                notificationService.createInApp(
+                        admin.getId(),
+                        NotificationType.GENERIC,
+                        "Yêu cầu xác thực e-KYC",
+                        "Bạn đọc " + user.getFullName() + " vừa gửi yêu cầu xác thực hồ sơ KYC. Vui lòng kiểm tra.",
+                        null,
+                        null
+                );
             }
         }
 
@@ -101,14 +98,14 @@ public class UserKycController {
         if (user != null && oldStatus != VerificationStatus.PENDING) {
             List<User> admins = userRepository.findByRole(Role.ADMIN);
             for (User admin : admins) {
-                Notification notif = new Notification();
-                notif.setUserId(admin.getId());
-                notif.setSubject("Yêu cầu xác thực e-KYC");
-                notif.setBody("Bạn đọc " + user.getFullName() + " vừa cập nhật và gửi yêu cầu xác thực KYC. Vui lòng kiểm tra.");
-                notif.setType(NotificationType.GENERIC);
-                notif.setChannel(NotificationChannel.INAPP);
-                notif.setScheduledAt(LocalDateTime.now());
-                notificationRepository.save(notif);
+                notificationService.createInApp(
+                        admin.getId(),
+                        NotificationType.GENERIC,
+                        "Yêu cầu xác thực e-KYC",
+                        "Bạn đọc " + user.getFullName() + " vừa cập nhật và gửi yêu cầu xác thực KYC. Vui lòng kiểm tra.",
+                        null,
+                        null
+                );
             }
         }
 

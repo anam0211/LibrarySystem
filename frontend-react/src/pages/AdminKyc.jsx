@@ -8,31 +8,36 @@ import {
 } from "@ant-design/icons";
 import { Button, Card, Descriptions, Image, Modal, Segmented, Space, Table, Tag, Typography, message, notification } from "antd";
 import { useEffect, useMemo, useState } from "react";
-import { libraryApi } from "../api/libraryApi";
 import { toAbsoluteMediaUrl } from "../api/apiClient";
+import { libraryGateway } from "../api/libraryGateway";
 import PageHeader from "../components/PageHeader";
 import { formatDateTime } from "../components/formatters";
 
 const STATUS_FILTERS = [
   { label: "Tất cả", value: "ALL" },
   { label: "Chờ duyệt", value: "PENDING" },
-  { label: "Chưa xác thực", value: "UNVERIFIED" }
+  { label: "Từ chối", value: "UNVERIFIED" },
+  { label: "Đã xác thực", value: "VERIFIED" }
 ];
 
 function kycTag(status) {
   if (status === "VERIFIED") {
-    return <Tag color="green">Đã duyệt</Tag>;
+    return <Tag color="green">Đã xác thực</Tag>;
   }
 
   if (status === "PENDING") {
     return <Tag color="gold">Chờ duyệt</Tag>;
   }
 
-  return <Tag color="red">Chưa xác thực</Tag>;
+  return <Tag color="red">Từ chối</Tag>;
 }
 
 function getRejectLabel(status) {
   return status === "VERIFIED" ? "Hủy xác thực" : "Từ chối";
+}
+
+function getKycDocumentUrl(user) {
+  return user?.idCardImageUrl || user?.kycDocument?.url || "";
 }
 
 export default function AdminKyc() {
@@ -46,13 +51,12 @@ export default function AdminKyc() {
     setLoading(true);
 
     try {
-      const res = await libraryApi.users.kycUsers();
-      const allUsers = res?.data || res || [];
-      const normalizedUsers = allUsers.map(u => ({
-        ...u,
-        kycStatus: u.verificationStatus || u.kycStatus
-      }));
-      setUsers(normalizedUsers.filter(u => u.kycStatus !== "VERIFIED"));
+      const allUsers = await libraryGateway.listKycUsers();
+      const reviewedUsers = allUsers.filter((user) => {
+        const hasKycDocument = Boolean(getKycDocumentUrl(user));
+        return hasKycDocument || user?.kycStatus === "PENDING" || user?.kycStatus === "VERIFIED";
+      });
+      setUsers(reviewedUsers);
     } catch (error) {
       message.error(error?.message || "Không thể tải danh sách hồ sơ KYC.");
     } finally {
@@ -75,14 +79,15 @@ export default function AdminKyc() {
   const metrics = useMemo(() => ({
     all: users.length,
     pending: users.filter((user) => user.kycStatus === "PENDING").length,
-    unverified: users.filter((user) => user.kycStatus === "UNVERIFIED").length
+    unverified: users.filter((user) => user.kycStatus === "UNVERIFIED").length,
+    verified: users.filter((user) => user.kycStatus === "VERIFIED").length
   }), [users]);
 
   async function approve(user) {
     if (!user.fullName || !user.email || !user.phone) {
       notifyApi.error({
         message: "Không thể xác thực",
-        description: "Thiếu thông tin! Yêu cầu bổ sung đầy đủ họ tên, email và số điện thoại.",
+        description: "Thiếu thông tin. Cần đủ họ tên, email và số điện thoại để duyệt KYC.",
         placement: "bottomRight"
       });
       return;
@@ -90,7 +95,7 @@ export default function AdminKyc() {
 
     try {
       const targetId = user.id || user.userId;
-      await libraryApi.users.approveKyc(targetId);
+      await libraryGateway.approveKyc(targetId);
       notifyApi.success({
         message: "Xác thực thành công",
         description: `Đã cấp thẻ thư viện cho ${user.fullName}.`,
@@ -110,7 +115,7 @@ export default function AdminKyc() {
   async function reject(user) {
     try {
       const targetId = user.id || user.userId;
-      await libraryApi.users.rejectKyc(targetId);
+      await libraryGateway.rejectKyc(targetId);
       message.warning(`Đã cập nhật trạng thái hồ sơ của ${user.fullName}.`);
       setSelected(null);
       await refresh();
@@ -127,8 +132,8 @@ export default function AdminKyc() {
       {notifyContextHolder}
       <PageHeader
         eyebrow="e-KYC"
-        title="Quản lý hồ sơ bạn đọc"
-        description="Xem chi tiết, duyệt, từ chối hoặc hủy xác thực hồ sơ e-KYC của bạn đọc."
+        title="Duyệt hồ sơ KYC"
+        description="Theo dõi hồ sơ chờ duyệt, hồ sơ bị từ chối và danh sách bạn đọc đã xác thực."
         extra={
           <Button icon={<ReloadOutlined />} onClick={refresh} loading={loading}>
             Làm mới
@@ -141,7 +146,8 @@ export default function AdminKyc() {
           <Space wrap>
             <Tag color="blue">{metrics.all} hồ sơ</Tag>
             <Tag color="gold">{metrics.pending} chờ duyệt</Tag>
-            <Tag color="red">{metrics.unverified} chưa xác thực</Tag>
+            <Tag color="red">{metrics.unverified} từ chối</Tag>
+            <Tag color="green">{metrics.verified} đã xác thực</Tag>
           </Space>
 
           <Segmented value={statusFilter} options={STATUS_FILTERS} onChange={setStatusFilter} />
@@ -164,7 +170,7 @@ export default function AdminKyc() {
               },
               { title: "Email xác thực", dataIndex: "email" },
               { title: "Số điện thoại", dataIndex: "phone" },
-              { title: "Hồ sơ", render: (_, record) => record.idCardImageUrl ? "Đã tải ảnh" : "-" },
+              { title: "Hồ sơ", render: (_, record) => getKycDocumentUrl(record) ? "Đã tải ảnh" : "-" },
               { title: "Trạng thái", dataIndex: "kycStatus", render: kycTag },
               {
                 title: "Thao tác",
@@ -177,6 +183,7 @@ export default function AdminKyc() {
                     <Button
                       type="primary"
                       icon={<CheckCircleOutlined />}
+                      disabled={record.kycStatus !== "PENDING"}
                       onClick={() => approve(record)}
                     >
                       Duyệt
@@ -242,13 +249,13 @@ export default function AdminKyc() {
             <div className="mock-id-card">
               <IdcardOutlined />
               <div>
-                <strong>{selected.idCardImageUrl ? "Ảnh CCCD / Thẻ sinh viên" : "Chưa có hồ sơ"}</strong>
-                <p>{selected.idCardImageUrl ? "Tài liệu xác minh đã được tải lên." : "Bạn đọc chưa tải tài liệu xác minh."}</p>
-                {selected.idCardImageUrl ? (
+                <strong>{getKycDocumentUrl(selected) ? "Ảnh CCCD / Thẻ sinh viên" : "Chưa có hồ sơ"}</strong>
+                <p>{getKycDocumentUrl(selected) ? "Tài liệu xác minh đã được tải lên." : "Bạn đọc chưa tải tài liệu xác minh."}</p>
+                {getKycDocumentUrl(selected) ? (
                   <Button
                     type="link"
                     icon={<LinkOutlined />}
-                    href={toAbsoluteMediaUrl(selected.idCardImageUrl)}
+                    href={toAbsoluteMediaUrl(getKycDocumentUrl(selected))}
                     target="_blank"
                     rel="noreferrer"
                     style={{ paddingInline: 0 }}
@@ -259,9 +266,9 @@ export default function AdminKyc() {
               </div>
             </div>
 
-            {selected.idCardImageUrl ? (
+            {getKycDocumentUrl(selected) ? (
               <Image
-                src={toAbsoluteMediaUrl(selected.idCardImageUrl)}
+                src={toAbsoluteMediaUrl(getKycDocumentUrl(selected))}
                 alt="Ảnh CCCD / thẻ sinh viên"
                 style={{ maxHeight: 360, objectFit: "contain", borderRadius: 12 }}
               />

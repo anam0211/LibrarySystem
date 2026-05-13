@@ -1,16 +1,18 @@
 import {
+  AlertOutlined,
   BankOutlined,
+  BookOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
   CreditCardOutlined,
   EyeOutlined,
-  HeartOutlined,
-  IdcardOutlined,
   QrcodeOutlined,
+  ReadOutlined,
   RollbackOutlined,
   ShoppingCartOutlined,
   TruckOutlined,
-  UploadOutlined
+  UploadOutlined,
+  WalletOutlined
 } from "@ant-design/icons";
 import {
   Alert,
@@ -18,6 +20,7 @@ import {
   Card,
   Col,
   Descriptions,
+  Drawer,
   Empty,
   Form,
   Input,
@@ -26,58 +29,88 @@ import {
   Popconfirm,
   QRCode,
   Row,
+  Select,
   Space,
-  Steps,
-  Tabs,
+  Table,
   Tag,
   Typography,
   Upload,
   message
 } from "antd";
-import { useEffect, useState } from "react";
-import { Link, useLocation, useSearchParams } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { normalizeSession, writeSession } from "../api/authStore";
+import { toAbsoluteMediaUrl } from "../api/apiClient";
 import { libraryApi } from "../api/libraryApi";
 import { libraryGateway } from "../api/libraryGateway";
+import BookCard from "../components/BookCard";
 import { formatCurrency, formatDate, formatDateTime, formatNumber } from "../components/formatters";
-import { toAbsoluteMediaUrl } from "../api/apiClient";
 
 const READER_QR_TTL_MS = 60000;
 
-function FakeQr({ label }) {
-  return (
-    <div className="fake-qr fake-qr-large">
-      {Array.from({ length: 64 }).map((_, index) => (
-        <i key={index} className={(index * 7 + String(label).length) % 4 === 0 ? "on" : ""} />
-      ))}
-    </div>
-  );
-}
+const STATUS_META = {
+  NEW: ["default", "Chờ duyệt"],
+  PACKING: ["cyan", "Cần giao"],
+  SHIPPING: ["blue", "Đang giao"],
+  BORROWING: ["green", "Đang mượn"],
+  RETURNING: ["purple", "Chờ nhận trả"],
+  CHECKING: ["orange", "Đang kiểm tra"],
+  RETURNED: ["green", "Hoàn tất"],
+  OVERDUE: ["red", "Quá hạn"],
+  CANCELLED: ["red", "Đã hủy"]
+};
 
-function statusTag(status) {
-  const map = {
-    NEW: ["gold", "Chờ duyệt"],
-    PACKING: ["cyan", "Đang gói"],
-    SHIPPING: ["blue", "Đang giao"],
-    BORROWING: ["green", "Đang mượn"],
-    RETURNING: ["purple", "Chờ nhận trả"],
-    RETURNED: ["default", "Đã trả"],
-    OVERDUE: ["red", "Quá hạn"]
-  };
-  const [color, label] = map[status] || ["default", status];
+function StatusBadge({ status }) {
+  const [color, label] = STATUS_META[status] || ["default", status];
   return <Tag color={color}>{label}</Tag>;
 }
 
 function kycTag(status) {
-  if (status === "VERIFIED") {
-    return <Tag color="green">Đã xác thực</Tag>;
-  }
-
-  if (status === "PENDING") {
-    return <Tag color="gold">Chờ admin duyệt</Tag>;
-  }
-
+  if (status === "VERIFIED") return <Tag color="green">Đã xác thực</Tag>;
+  if (status === "PENDING") return <Tag color="gold">Chờ xác thực</Tag>;
   return <Tag color="red">Chưa xác thực</Tag>;
+}
+
+function isDeliveryLoan(loan) {
+  return loan.receiveMethod === "DELIVERY" || loan.deliveryMethod === "HOME_DELIVERY";
+}
+
+function getDateOnly(value) {
+  if (!value) return null;
+  const parsed = new Date(String(value).includes("T") ? value : `${value}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  parsed.setHours(0, 0, 0, 0);
+  return parsed;
+}
+
+function todayStart() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+}
+
+function isOverdue(loan) {
+  if (loan.status !== "BORROWING") return false;
+  const dueDate = getDateOnly(loan.dueDate);
+  return dueDate ? dueDate < todayStart() : false;
+}
+
+function isDueSoon(loan) {
+  if (loan.status !== "BORROWING" || isOverdue(loan)) return false;
+  const dueDate = getDateOnly(loan.dueDate);
+  if (!dueDate) return false;
+  const tomorrow = todayStart();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return dueDate <= tomorrow;
+}
+
+function readerLoanStatus(loan) {
+  return isOverdue(loan) ? "OVERDUE" : loan.status;
+}
+
+function bookCountText(loan) {
+  const count = Array.isArray(loan.books) && loan.books.length ? loan.books.length : 1;
+  return `${count} cuốn`;
 }
 
 function buildReaderQrToken(userId, issuedAt) {
@@ -93,135 +126,430 @@ function formatQrTime(value) {
   });
 }
 
-export default function Reader({ session, onSessionUpdate }) {
-  const location = useLocation();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [kycForm] = Form.useForm();
+function isImageMedia(asset) {
+  return ["PNG", "JPG", "JPEG", "WEBP", "GIF"].includes(String(asset?.assetType || "").toUpperCase());
+}
+
+async function attachFavoriteBookCovers(books) {
+  return Promise.all(
+    books.map(async (book) => {
+      if (book.primaryImageUrl) {
+        return book;
+      }
+
+      try {
+        const media = await libraryGateway.getBookMedia(book.id);
+        const coverAsset = media.find((asset) => asset.primary && isImageMedia(asset)) || media.find(isImageMedia);
+        return { ...book, primaryImageUrl: coverAsset?.fileUrl || "" };
+      } catch {
+        return book;
+      }
+    })
+  );
+}
+
+function useReaderData(session) {
   const [user, setUser] = useState(null);
   const [loans, setLoans] = useState([]);
   const [fines, setFines] = useState([]);
   const [wishlist, setWishlist] = useState([]);
-  const [payFine, setPayFine] = useState(null);
-  const [qrIssuedAt, setQrIssuedAt] = useState(() => Date.now());
-  const [kycFileList, setKycFileList] = useState([]);
-  const [submittingKyc, setSubmittingKyc] = useState(false);
-  const [returningLoanId, setReturningLoanId] = useState(null);
-  const [selectedFine, setSelectedFine] = useState(null);
-
-  const activeTab = searchParams.get("tab") || location.state?.section || "card";
 
   async function loadReader() {
-    if (!session?.id) {
-      return;
-    }
-
+    if (!session?.id) return;
     const [nextUser, nextLoans, nextFines, nextWishlist] = await Promise.all([
       libraryGateway.getUser(session.id),
       libraryGateway.listLoans(session.id),
       libraryGateway.listFines(session.id),
       libraryGateway.getWishlist(session.id)
     ]);
-
     setUser(nextUser);
     setLoans(nextLoans);
     setFines(nextFines);
-    setWishlist(nextWishlist);
+    setWishlist(await attachFavoriteBookCovers(nextWishlist));
   }
 
   useEffect(() => {
     loadReader();
-  }, [session?.id, location.state?.loanId]);
-
-  useEffect(() => {
-    setQrIssuedAt(Date.now());
-    const timer = window.setInterval(() => {
-      setQrIssuedAt(Date.now());
-    }, READER_QR_TTL_MS);
-
-    return () => window.clearInterval(timer);
   }, [session?.id]);
 
-  useEffect(() => {
-    kycForm.setFieldsValue({
-      email: user?.email || session?.email || "",
-      phone: user?.phone || session?.phone || "",
-      address: user?.address || "",
-      idCardNumber: user?.idCardNumber || ""
-    });
-  }, [kycForm, session?.email, session?.phone, user?.address, user?.email, user?.idCardNumber, user?.phone]);
+  return { user, setUser, loans, fines, wishlist, loadReader };
+}
 
-  async function handleSubmitKyc(values) {
-    if (!session?.id) {
-      return;
-    }
+function ReaderHeader({ user, session, unpaidAmount }) {
+  return (
+    <div className="reader-dashboard-header">
+      <div>
+        <p className="page-eyebrow">Tài khoản bạn đọc</p>
+        <h1 className="page-title">Xin chào, {user?.fullName || session?.fullName || "bạn đọc"}</h1>
+        <p className="page-copy">Theo dõi đơn mượn, hạn trả, phí phạt và thông tin thẻ thư viện của bạn.</p>
+      </div>
+      <Space wrap>
+        {kycTag(user?.kycStatus || session?.kycStatus)}
+        {unpaidAmount > 0 ? <Tag color="red">Nợ phạt {formatCurrency(unpaidAmount)}</Tag> : null}
+        <Link to="/reader/cart">
+          <Button type="primary" icon={<ShoppingCartOutlined />}>Mở giỏ mượn</Button>
+        </Link>
+      </Space>
+    </div>
+  );
+}
 
-    const selectedFile = kycFileList[0]?.originFileObj || null;
-    const hasExistingDocument = Boolean(user?.idCardImageUrl);
+function ReaderStats({ loans, fines }) {
+  const borrowedBooks = loans
+    .filter((loan) => ["BORROWING", "RETURNING", "OVERDUE"].includes(readerLoanStatus(loan)))
+    .reduce((sum, loan) => sum + (Array.isArray(loan.books) && loan.books.length ? loan.books.length : 1), 0);
+  const activeOrders = loans.filter((loan) => !["RETURNED", "CANCELLED"].includes(loan.status)).length;
+  const dueSoon = loans.filter(isDueSoon).length;
+  const unpaidAmount = fines.filter((fine) => fine.status === "UNPAID").reduce((sum, fine) => sum + fine.amount, 0);
+  const items = [
+    ["Đơn đang xử lý", activeOrders, "Đơn chưa hoàn tất", <TruckOutlined />],
+    ["Sách đang mượn", borrowedBooks, "Tổng số cuốn đang giữ", <ReadOutlined />],
+    ["Sắp đến hạn", dueSoon, "Cần chú ý trong 24 giờ", <ClockCircleOutlined />],
+    ["Nợ phạt", formatCurrency(unpaidAmount), "Khoản chưa thanh toán", <WalletOutlined />]
+  ];
 
-    if (user?.canEdit === false || user?.kycStatus === "VERIFIED") {
-      message.warning("Hồ sơ đã được xác thực nên không thể chỉnh sửa.");
-      return;
-    }
+  return (
+    <div className="reader-stat-grid">
+      {items.map(([title, value, desc, icon]) => (
+        <Card className="metric-card reader-stat-card" key={title}>
+          <Space align="start" style={{ width: "100%", justifyContent: "space-between" }}>
+            <div>
+              <Typography.Text type="secondary">{title}</Typography.Text>
+              <strong>{typeof value === "number" ? formatNumber(value) : value}</strong>
+              <span>{desc}</span>
+            </div>
+            <span className="reader-stat-icon">{icon}</span>
+          </Space>
+        </Card>
+      ))}
+    </div>
+  );
+}
 
-    if (!hasExistingDocument && !selectedFile) {
-      message.error("Vui lòng tải ảnh CCCD hoặc thẻ sinh viên trước khi gửi hồ sơ.");
-      return;
-    }
+function ReaderAlertSection({ loans }) {
+  const overdueLoans = loans.filter(isOverdue);
+  const dueSoonLoans = loans.filter(isDueSoon);
+  if (overdueLoans.length) {
+    return (
+      <Alert
+        type="error"
+        showIcon
+        icon={<AlertOutlined />}
+        message={`Bạn có ${overdueLoans.length} đơn quá hạn`}
+        description="Vui lòng gửi yêu cầu trả sách hoặc liên hệ thư viện để tránh phát sinh thêm phí phạt."
+      />
+    );
+  }
+  if (dueSoonLoans.length) {
+    return (
+      <Alert
+        type="warning"
+        showIcon
+        message={`${dueSoonLoans.length} đơn sắp đến hạn`}
+        description="Bạn nên chuẩn bị trả sách đúng hạn để không phát sinh phí phạt."
+      />
+    );
+  }
+  return <Alert type="success" showIcon message="Bạn không có đơn quá hạn." />;
+}
 
-    setSubmittingKyc(true);
+function BorrowOrderDetailDrawer({ loan, open, onClose, onRequestReturn, returningLoanId }) {
+  const books = Array.isArray(loan?.books) ? loan.books : [];
+  const status = loan ? readerLoanStatus(loan) : "";
+  const canReturn = ["BORROWING", "OVERDUE"].includes(status);
 
+  return (
+    <Drawer title={loan ? `Chi tiết đơn #${loan.id}` : "Chi tiết đơn"} open={open} onClose={onClose} width={560}>
+      {loan ? (
+        <Space direction="vertical" size={16} style={{ width: "100%" }}>
+          <Descriptions column={1} bordered size="small">
+            <Descriptions.Item label="Trạng thái"><StatusBadge status={status} /></Descriptions.Item>
+            <Descriptions.Item label="Hình thức">{isDeliveryLoan(loan) ? "Giao tận nhà" : "Đến lấy"}</Descriptions.Item>
+            <Descriptions.Item label="Số sách">{bookCountText(loan)}</Descriptions.Item>
+            <Descriptions.Item label="Ngày mượn">{formatDate(loan.createdAt)}</Descriptions.Item>
+            <Descriptions.Item label="Hạn trả">{formatDate(loan.dueDate)}</Descriptions.Item>
+            <Descriptions.Item label="Phí phạt">{status === "OVERDUE" ? formatCurrency(50000) : "Chưa phát sinh"}</Descriptions.Item>
+          </Descriptions>
+          {status === "OVERDUE" ? <Alert type="error" showIcon message="Đơn đã quá hạn, có thể phát sinh phí phạt." /> : null}
+          {status === "RETURNING" ? <Alert type="info" showIcon message="Đang chờ thư viện nhận lại sách." /> : null}
+          {status === "CHECKING" ? <Alert type="warning" showIcon message="Thư viện đang kiểm tra sách." /> : null}
+          <Card size="small" title="Danh sách sách trong đơn">
+            {books.length ? (
+              <List dataSource={books} renderItem={(book, index) => <List.Item>{index + 1}. {book.title}</List.Item>} />
+            ) : (
+              <Typography.Text type="secondary">{loan.bookTitle}</Typography.Text>
+            )}
+          </Card>
+          <Card size="small" title="Lịch sử xử lý đơn">
+            <List
+              dataSource={loan.tracking || []}
+              locale={{ emptyText: "Chưa có lịch sử." }}
+              renderItem={(item) => (
+                <List.Item>
+                  <Space>
+                    <Tag color={item.done ? "green" : "default"}>{item.label}</Tag>
+                    <Typography.Text type="secondary">{item.time && item.time !== "BE" ? formatDateTime(item.time) : "Theo luồng đơn"}</Typography.Text>
+                  </Space>
+                </List.Item>
+              )}
+            />
+          </Card>
+          {canReturn ? (
+            <Button type="primary" icon={<RollbackOutlined />} loading={returningLoanId === loan.id} onClick={() => onRequestReturn(loan)}>
+              Yêu cầu trả sách
+            </Button>
+          ) : null}
+        </Space>
+      ) : null}
+    </Drawer>
+  );
+}
+
+function FakeQr({ label }) {
+  return (
+    <div className="fake-qr fake-qr-large">
+      {Array.from({ length: 64 }).map((_, index) => (
+        <i key={index} className={(index * 7 + String(label).length) % 4 === 0 ? "on" : ""} />
+      ))}
+    </div>
+  );
+}
+
+function summarizeLoanTitle(loan) {
+  const titles = Array.isArray(loan?.books) && loan.books.length
+    ? loan.books.map((book) => book?.title).filter(Boolean)
+    : [];
+  const text = titles.length ? titles.join(", ") : String(loan?.bookTitle || "-");
+
+  return text.length > 72 ? `${text.slice(0, 72).trim()}...` : text;
+}
+
+function useReaderReturnAction(loadReader, onDone) {
+  const [returningLoanId, setReturningLoanId] = useState(null);
+
+  async function handleRequestReturn(loan) {
+    setReturningLoanId(loan.id);
     try {
-      const nextUser = await libraryGateway.saveMyKyc(
-        session.id,
-        values,
-        selectedFile,
-        Boolean(hasExistingDocument || user?.kycStatus === "PENDING")
-      );
-
-      setUser(nextUser);
-      setKycFileList([]);
-
-      const nextSession = normalizeSession({
-        ...session,
-        fullName: nextUser.fullName || session?.fullName,
-        phone: nextUser.phone || "",
-        studentCode: nextUser.studentCode || session?.studentCode,
-        kycStatus: nextUser.kycStatus || session?.kycStatus
-      });
-
-      writeSession(nextSession);
-      onSessionUpdate?.(nextSession);
-
-      if (nextUser.adminApprovalEnabled) {
-        message.success("Đã gửi hồ sơ xác thực. Hệ thống đã gửi thông báo nhắc nhở đến các Quản trị viên.");
-      } else {
-        message.success("Đã lưu hồ sơ xác thực.");
-      }
+      await libraryGateway.requestReturn(loan.id);
+      message.success("Yêu cầu trả sách đã được gửi. Thư viện sẽ liên hệ hoặc đến nhận sách.");
+      await loadReader();
+      onDone?.();
     } catch (error) {
-      message.error(error?.message || "Không thể lưu hồ sơ xác thực.");
+      message.error(error?.message || "Không thể gửi yêu cầu trả sách.");
     } finally {
-      setSubmittingKyc(false);
+      setReturningLoanId(null);
     }
   }
 
-  async function handleCancelKyc() {
-    try {
-      await libraryApi.users.cancelVerification();
-      message.success("Đã hủy xác thực hồ sơ thành công.");
-      
-      const nextUser = await libraryGateway.getUser(session.id);
-      setUser(nextUser);
-      
-      const nextSession = normalizeSession({
-        ...session,
-        kycStatus: "UNVERIFIED"
-      });
-      writeSession(nextSession);
-      onSessionUpdate?.(nextSession);
-    } catch (error) {
-      message.error(error?.message || "Không thể hủy xác thực.");
+  return { returningLoanId, handleRequestReturn };
+}
+
+export default function Reader({ session }) {
+  const { user, loans, fines, loadReader } = useReaderData(session);
+  const [selectedLoan, setSelectedLoan] = useState(null);
+  const { returningLoanId, handleRequestReturn } = useReaderReturnAction(loadReader);
+  const unpaidAmount = fines.filter((fine) => fine.status === "UNPAID").reduce((sum, fine) => sum + fine.amount, 0);
+  const activeLoans = loans.filter((loan) => !["RETURNED", "CANCELLED"].includes(loan.status));
+  const cardCode = user?.cardCode || "Chưa cấp thẻ";
+
+  return (
+    <div className="page-shell reader-dashboard">
+      <ReaderHeader user={user} session={session} unpaidAmount={unpaidAmount} />
+      <ReaderStats loans={loans} fines={fines} />
+      <ReaderAlertSection loans={loans} />
+      <div className="reader-overview-grid">
+        <Card className="glass-card" title="Đơn mượn gần đây">
+          <List
+            dataSource={loans.slice(0, 4)}
+            locale={{ emptyText: "Chưa có đơn mượn." }}
+            renderItem={(loan) => (
+              <List.Item actions={[<Button type="link" onClick={() => setSelectedLoan(loan)}>Xem chi tiết</Button>]}>
+                <List.Item.Meta
+                  title={<Space><Tag color="blue">#{loan.id}</Tag><StatusBadge status={readerLoanStatus(loan)} /></Space>}
+                  description={`${bookCountText(loan)} / Hạn trả: ${formatDate(loan.dueDate)}`}
+                />
+              </List.Item>
+            )}
+          />
+        </Card>
+        <Card className="glass-card" title="Sách đang mượn">
+          <List
+            dataSource={activeLoans.slice(0, 5)}
+            locale={{ emptyText: "Không có sách đang mượn." }}
+            renderItem={(loan) => (
+              <List.Item>
+                <List.Item.Meta avatar={<BookOutlined />} title={loan.bookTitle} description={`${bookCountText(loan)} / ${formatDate(loan.dueDate)}`} />
+              </List.Item>
+            )}
+          />
+        </Card>
+        <Card className="glass-card" title="Thông tin tài khoản">
+          <Descriptions column={1} size="small">
+            <Descriptions.Item label="Họ tên">{user?.fullName || session?.fullName || "-"}</Descriptions.Item>
+            <Descriptions.Item label="Email">{user?.email || session?.email || "-"}</Descriptions.Item>
+            <Descriptions.Item label="Điện thoại">{user?.phone || session?.phone || "-"}</Descriptions.Item>
+            <Descriptions.Item label="Xác thực">{kycTag(user?.kycStatus)}</Descriptions.Item>
+          </Descriptions>
+        </Card>
+        <Card className="glass-card reader-mini-card" title="Thẻ thư viện">
+          <Space>
+            <QRCode value={buildReaderQrToken(user?.id || session?.id, Date.now())} size={92} bordered={false} />
+            <div>
+              <Typography.Text type="secondary">BOOKHUB CARD</Typography.Text>
+              <Typography.Title level={4} style={{ margin: "4px 0" }}>{cardCode}</Typography.Title>
+              <Link to="/reader/card"><Button size="small">Xem thẻ</Button></Link>
+            </div>
+          </Space>
+        </Card>
+      </div>
+      <Card className="glass-card">
+        <Space wrap>
+          <Link to="/reader/orders"><Button type="primary">Xem đơn mượn</Button></Link>
+          <Link to="/reader/returns"><Button>Trả sách</Button></Link>
+          <Link to="/reader/fines"><Button>Nợ phạt</Button></Link>
+          <Link to="/reader/favorites"><Button>Yêu thích</Button></Link>
+        </Space>
+      </Card>
+      <BorrowOrderDetailDrawer loan={selectedLoan} open={Boolean(selectedLoan)} onClose={() => setSelectedLoan(null)} onRequestReturn={handleRequestReturn} returningLoanId={returningLoanId} />
+    </div>
+  );
+}
+
+export function ReaderOrders({ session }) {
+  const { loans, loadReader } = useReaderData(session);
+  const [keyword, setKeyword] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [selectedLoan, setSelectedLoan] = useState(null);
+  const { returningLoanId, handleRequestReturn } = useReaderReturnAction(loadReader);
+
+  const filteredLoans = useMemo(() => loans.filter((loan) => {
+    const status = readerLoanStatus(loan);
+    const matchesStatus = statusFilter === "ALL" || status === statusFilter;
+    const matchesKeyword = [loan.id, loan.readerName, loan.bookTitle].filter(Boolean).some((value) => String(value).toLowerCase().includes(keyword.trim().toLowerCase()));
+    return matchesStatus && (!keyword.trim() || matchesKeyword);
+  }), [keyword, loans, statusFilter]);
+
+  const columns = [
+    { title: "Mã đơn", dataIndex: "id", width: 100, render: (value) => <Tag color="blue">#{value}</Tag> },
+    { title: "Số sách", width: 90, render: (_, loan) => bookCountText(loan) },
+    { title: "Hình thức", width: 130, render: (_, loan) => isDeliveryLoan(loan) ? "Giao tận nhà" : "Đến lấy" },
+    { title: "Ngày mượn", dataIndex: "createdAt", width: 120, render: formatDate },
+    { title: "Hạn trả", dataIndex: "dueDate", width: 120, render: formatDate },
+    { title: "Trạng thái", width: 140, render: (_, loan) => <StatusBadge status={readerLoanStatus(loan)} /> },
+    {
+      title: "Hành động",
+      width: 210,
+      render: (_, loan) => {
+        const status = readerLoanStatus(loan);
+        return (
+          <Space>
+            <Button onClick={() => setSelectedLoan(loan)}>Xem chi tiết</Button>
+            {["BORROWING", "OVERDUE"].includes(status) ? (
+              <Button type="primary" icon={<RollbackOutlined />} loading={returningLoanId === loan.id} onClick={() => handleRequestReturn(loan)}>
+                Yêu cầu trả
+              </Button>
+            ) : null}
+          </Space>
+        );
+      }
     }
-  }
+  ];
+
+  return (
+    <div className="page-shell reader-dashboard">
+      <div className="page-toolbar">
+        <div>
+          <p className="page-eyebrow">Đơn mượn</p>
+          <h1 className="page-title">Danh sách đơn mượn</h1>
+          <p className="page-copy">Tra cứu đơn mượn, theo dõi trạng thái và yêu cầu trả sách.</p>
+        </div>
+      </div>
+      <Card className="glass-card">
+        <Space wrap style={{ marginBottom: 14 }}>
+          <Input.Search allowClear placeholder="Tìm mã đơn hoặc tên sách" value={keyword} onChange={(event) => setKeyword(event.target.value)} style={{ width: 280 }} />
+          <Select value={statusFilter} onChange={setStatusFilter} style={{ width: 180 }}>
+            <Select.Option value="ALL">Tất cả trạng thái</Select.Option>
+            {Object.entries(STATUS_META).map(([status, [, label]]) => <Select.Option key={status} value={status}>{label}</Select.Option>)}
+          </Select>
+        </Space>
+        <Table rowKey="id" columns={columns} dataSource={filteredLoans} scroll={{ x: 900 }} pagination={{ pageSize: 5, showSizeChanger: true, pageSizeOptions: [5, 10] }} />
+      </Card>
+      <BorrowOrderDetailDrawer loan={selectedLoan} open={Boolean(selectedLoan)} onClose={() => setSelectedLoan(null)} onRequestReturn={handleRequestReturn} returningLoanId={returningLoanId} />
+    </div>
+  );
+}
+
+export function ReaderReturns({ session }) {
+  const { loans, loadReader } = useReaderData(session);
+  const [selectedLoan, setSelectedLoan] = useState(null);
+  const { returningLoanId, handleRequestReturn } = useReaderReturnAction(loadReader, () => setSelectedLoan(null));
+  const borrowableLoans = loans.filter((loan) => ["BORROWING", "OVERDUE"].includes(readerLoanStatus(loan)));
+
+  return (
+    <div className="page-shell reader-dashboard">
+      <div className="page-toolbar">
+        <div>
+          <p className="page-eyebrow">Trả sách</p>
+          <h1 className="page-title">Yêu cầu trả sách</h1>
+          <p className="page-copy">Chọn đơn đang mượn hoặc quá hạn để gửi yêu cầu trả cho thư viện.</p>
+        </div>
+      </div>
+      <Card className="glass-card return-request-card" title="Yêu cầu trả sách">
+        <List
+          className="return-request-list"
+          dataSource={borrowableLoans}
+          locale={{ emptyText: <Empty description="Bạn chưa có đơn nào cần trả." /> }}
+          renderItem={(loan) => {
+            const status = readerLoanStatus(loan);
+            const statusLabel = STATUS_META[status]?.[1] || status;
+
+            return (
+              <List.Item
+                className="return-request-item"
+                actions={[
+                  <Button key="detail" icon={<EyeOutlined />} onClick={() => setSelectedLoan(loan)}>
+                    Xem chi tiết
+                  </Button>,
+                  <Button key="request" type="primary" icon={<RollbackOutlined />} loading={returningLoanId === loan.id} onClick={() => handleRequestReturn(loan)}>
+                    Yêu cầu trả
+                  </Button>
+                ]}
+              >
+                <div className="return-request-main">
+                  <div className="return-request-head">
+                    <Space wrap size={[8, 8]}>
+                      <Tag color="blue">Mã đơn #{loan.id}</Tag>
+                      <StatusBadge status={status} />
+                    </Space>
+                  </div>
+                  <div className="return-request-title">
+                    <Typography.Text type="secondary">Tên sách</Typography.Text>
+                    <Typography.Paragraph className="return-request-book-name">
+                      {summarizeLoanTitle(loan)}
+                    </Typography.Paragraph>
+                  </div>
+                  <div className="return-request-meta">
+                    <span><strong>Số sách:</strong> {bookCountText(loan)}</span>
+                    <span><strong>Hạn trả:</strong> {formatDate(loan.dueDate)}</span>
+                    <span><strong>Trạng thái:</strong> {statusLabel}</span>
+                  </div>
+                </div>
+              </List.Item>
+            );
+          }}
+        />
+      </Card>
+      <BorrowOrderDetailDrawer loan={selectedLoan} open={Boolean(selectedLoan)} onClose={() => setSelectedLoan(null)} onRequestReturn={handleRequestReturn} returningLoanId={returningLoanId} />
+    </div>
+  );
+}
+
+export function ReaderFines({ session }) {
+  const { fines, loadReader } = useReaderData(session);
+  const [payFine, setPayFine] = useState(null);
+  const [selectedFine, setSelectedFine] = useState(null);
+  const unpaid = fines.filter((fine) => fine.status === "UNPAID");
+  const total = unpaid.reduce((sum, fine) => sum + fine.amount, 0);
 
   async function handlePayFine() {
     try {
@@ -234,503 +562,226 @@ export default function Reader({ session, onSessionUpdate }) {
     }
   }
 
-  async function handleRequestReturn(loan) {
-    setReturningLoanId(loan.id);
-
-    try {
-      await libraryGateway.requestReturn(loan.id);
-      message.success("Đã gửi yêu cầu trả sách. Thư viện sẽ liên hệ nhận lại sách.");
-      await loadReader();
-      setSearchParams({ tab: "returns" });
-    } catch (error) {
-      message.error(error?.message || "Không thể gửi yêu cầu trả sách.");
-    } finally {
-      setReturningLoanId(null);
-    }
-  }
-
-  const unpaidFines = fines.filter((fine) => fine.status === "UNPAID");
-  const cardCode = user?.cardCode || "Chưa cấp thẻ";
-  const readerUserId = user?.id || session?.id;
-  const readerQrToken = buildReaderQrToken(readerUserId, qrIssuedAt);
-  const readerQrExpiresAt = qrIssuedAt + READER_QR_TTL_MS;
-  const hasExistingKycDocument = Boolean(user?.idCardImageUrl);
-  const canEditKyc = user?.canEdit !== false && user?.kycStatus !== "VERIFIED";
-  const deliveryReturnLoans = loans.filter((loan) => (loan.receiveMethod === "DELIVERY" || loan.deliveryMethod === "HOME_DELIVERY")
-    && ["BORROWING", "RETURNING", "RETURNED"].includes(loan.status));
-  const submitButtonLabel = hasExistingKycDocument || user?.kycStatus === "PENDING"
-    ? "Cập nhật và gửi lại"
-    : "Gửi hồ sơ xác thực";
-
-  const tabItems = [
-    {
-      key: "card",
-      label: "Thẻ & KYC",
-      icon: <IdcardOutlined />,
-      children: (
-        <Row gutter={[20, 20]} align="stretch">
-          <Col xs={24} xl={10}>
-            <Card className="glass-card library-card-panel">
-              <Space direction="vertical" size={16} style={{ width: "100%" }}>
-                <div className="page-toolbar">
-                  <div>
-                    <p className="page-eyebrow">Thẻ thư viện điện tử</p>
-                    <Typography.Title level={3} style={{ margin: 0 }}>
-                      {user?.fullName || session?.fullName}
-                    </Typography.Title>
-                  </div>
-                  {kycTag(user?.kycStatus)}
-                </div>
-
-                <div className="virtual-card">
-                  <div>
-                    <span>BOOKHUB CARD</span>
-                    <strong>{cardCode}</strong>
-                    <p>{user?.studentCode}</p>
-                  </div>
-                  <div className="reader-qr-panel">
-                    <QRCode
-                      key={readerQrToken}
-                      value={readerQrToken}
-                      size={132}
-                      bordered={false}
-                      color="#162839"
-                      bgColor="#ffffff"
-                    />
-                    <small>user_id: {readerUserId}</small>
-                    <small>Làm mới lúc {formatQrTime(readerQrExpiresAt)}</small>
-                  </div>
-                </div>
-              </Space>
-            </Card>
-          </Col>
-
-          <Col xs={24} xl={14}>
-            <Card className="glass-card" title="Thông tin xác thực">
-              <Space direction="vertical" size={16} style={{ width: "100%" }}>
-                <Descriptions column={1} bordered size="small">
-                  <Descriptions.Item label="Email tài khoản">{user?.accountEmail || session?.email || "-"}</Descriptions.Item>
-                  <Descriptions.Item label="Số điện thoại">{user?.phone || "-"}</Descriptions.Item>
-                  <Descriptions.Item label="Địa chỉ">{user?.address || "-"}</Descriptions.Item>
-                  <Descriptions.Item label="Trạng thái">{kycTag(user?.kycStatus)}</Descriptions.Item>
-                  <Descriptions.Item label="Số CCCD / Mã SV">{user?.idCardNumber || "-"}</Descriptions.Item>
-                  <Descriptions.Item label="Ảnh CCCD">
-                    {hasExistingKycDocument ? "Đã lưu" : "Chưa tải"}
-                  </Descriptions.Item>
-                </Descriptions>
-
-                {user?.kycStatus === "VERIFIED" ? (
-                  <Alert
-                    type="success"
-                    showIcon
-                    message="Hồ sơ đã được xác thực."
-                    description="Thông tin KYC đã khóa, bạn đọc không thể chỉnh sửa sau khi admin duyệt."
-                  />
-                ) : null}
-
-                {user?.kycStatus === "PENDING" ? (
-                  <Alert
-                    type={user?.adminApprovalEnabled ? "info" : "warning"}
-                    showIcon
-                    message={user?.adminApprovalEnabled ? "Hồ sơ đang chờ admin duyệt." : "Hồ sơ đã lưu."}
-                    description={user?.adminApprovalEnabled
-                      ? "Bạn vẫn có thể chỉnh sửa thông tin và gửi lại trước khi hồ sơ được xác thực."
-                      : "Bạn có thể tiếp tục sửa email, số điện thoại, địa chỉ và gửi lại khi cần."}
-                  />
-                ) : null}
-
-                <Form form={kycForm} layout="vertical" onFinish={handleSubmitKyc}>
-                  <Row gutter={16}>
-                    <Col xs={24} md={12}>
-                      <Form.Item
-                        name="email"
-                        label="Email xác thực"
-                        rules={[
-                          { required: true, message: "Nhập email xác thực" },
-                          { type: "email", message: "Email không hợp lệ" }
-                        ]}
-                      >
-                        <Input disabled={!canEditKyc} placeholder="reader@library.com" />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={24} md={12}>
-                      <Form.Item
-                        name="phone"
-                        label="Số điện thoại"
-                        rules={[{ required: true, message: "Nhập số điện thoại" }]}
-                      >
-                        <Input disabled={!canEditKyc} placeholder="09xxxxxxxx" />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={24}>
-                      <Form.Item
-                        name="address"
-                        label="Địa chỉ"
-                        rules={[{ required: true, message: "Nhập địa chỉ" }]}
-                      >
-                        <Input.TextArea disabled={!canEditKyc} rows={3} placeholder="Nhập địa chỉ hiện tại của bạn" />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={24} md={12}>
-                      <Form.Item name="idCardNumber" label="Số CCCD / Mã sinh viên">
-                        <Input disabled={!canEditKyc} placeholder="Nhập số CCCD hoặc mã sinh viên" />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={24} md={12}>
-                      <Form.Item required label="Ảnh CCCD / Thẻ sinh viên">
-                        <Space direction="vertical" size={8} style={{ width: "100%" }}>
-                          <Upload
-                            accept=".jpg,.jpeg,.png,.webp"
-                            beforeUpload={() => false}
-                            disabled={!canEditKyc}
-                            fileList={kycFileList}
-                            maxCount={1}
-                            onChange={({ fileList }) => setKycFileList(fileList.slice(-1))}
-                          >
-                            <Button disabled={!canEditKyc} icon={<UploadOutlined />}>
-                              {hasExistingKycDocument ? "Chọn ảnh mới" : "Tải ảnh CCCD"}
-                            </Button>
-                          </Upload>
-                          {hasExistingKycDocument ? (
-                            <Typography.Text type="secondary">
-                              Đang dùng: Ảnh CCCD đã lưu
-                            </Typography.Text>
-                          ) : (
-                            <Typography.Text type="secondary">
-                              Ảnh CCCD hoặc thẻ sinh viên là bắt buộc trước khi gửi hồ sơ.
-                            </Typography.Text>
-                          )}
-                          {user?.idCardImageUrl ? (
-                            <Button
-                              type="link"
-                              href={toAbsoluteMediaUrl(user.idCardImageUrl)}
-                              target="_blank"
-                              rel="noreferrer"
-                              style={{ paddingInline: 0 }}
-                            >
-                              Xem ảnh đã lưu
-                            </Button>
-                          ) : null}
-                        </Space>
-                      </Form.Item>
-                    </Col>
-                  </Row>
-
-                  <Space>
-                    {user?.kycStatus === "VERIFIED" ? (
-                      <Popconfirm
-                        title="Bạn có chắc chắn muốn hủy xác thực?"
-                        description="Hành động này sẽ xóa trạng thái đã duyệt của hồ sơ."
-                        onConfirm={handleCancelKyc}
-                        okText="Hủy xác thực"
-                        cancelText="Đóng"
-                      >
-                        <Button danger>Hủy xác thực</Button>
-                      </Popconfirm>
-                    ) : (
-                      <>
-                        <Button type="primary" htmlType="submit" loading={submittingKyc} disabled={!canEditKyc}>
-                          {submitButtonLabel}
-                        </Button>
-                        <Button
-                          disabled={!canEditKyc}
-                          onClick={() => {
-                            kycForm.setFieldsValue({
-                              email: user?.email || session?.email || "",
-                              phone: user?.phone || session?.phone || "",
-                              address: user?.address || "",
-                              idCardNumber: user?.idCardNumber || ""
-                            });
-                            setKycFileList([]);
-                          }}
-                        >
-                          Khôi phục dữ liệu đã lưu
-                        </Button>
-                      </>
-                    )}
-                  </Space>
-                </Form>
-              </Space>
-            </Card>
-          </Col>
-        </Row>
-      )
-    },
-    {
-      key: "orders",
-      label: "Đơn mượn",
-      icon: <TruckOutlined />,
-      children: (
-        <Card className="glass-card" title="Đơn mượn & tracking">
-          <List
-            dataSource={loans}
-            locale={{ emptyText: "Chưa có đơn mượn." }}
-            renderItem={(loan) => (
-              <List.Item
-                className={location.state?.loanId === loan.id ? "highlight-row" : ""}
-                actions={[
-                  (loan.receiveMethod === "DELIVERY" || loan.deliveryMethod === "HOME_DELIVERY") && loan.status === "BORROWING" ? (
-                    <Button
-                      type="primary"
-                      icon={<RollbackOutlined />}
-                      loading={returningLoanId === loan.id}
-                      onClick={() => handleRequestReturn(loan)}
-                    >
-                      Yêu cầu trả
-                    </Button>
-                  ) : null
-                ].filter(Boolean)}
-              >
-                <List.Item.Meta
-                  title={
-                    <Space wrap>
-                      <strong>{loan.id}</strong>
-                      {statusTag(loan.status)}
-                      <Tag>{(loan.receiveMethod === "DELIVERY" || loan.deliveryMethod === "HOME_DELIVERY") ? "Giao tận nhà" : "Tại quầy"}</Tag>
-                    </Space>
-                  }
-                  description={
-                    <Space direction="vertical" size={8} style={{ width: "100%" }}>
-                      <span>{loan.bookTitle}</span>
-                      <span>Hạn trả: {formatDate(loan.dueDate)}</span>
-                      <Steps
-                        size="small"
-                        current={Math.max(0, (loan.tracking || []).filter((item) => item.done).length - 1)}
-                        items={(loan.tracking || []).map((item) => ({ title: item.label }))}
-                      />
-                    </Space>
-                  }
-                />
-              </List.Item>
-            )}
-          />
-        </Card>
-      )
-    },
-    {
-      key: "returns",
-      label: "Trả sách",
-      icon: <RollbackOutlined />,
-      children: (
-        <Card
-          className="glass-card"
-          title="Trả sách giao tận nhà"
-          extra={<Tag color="blue">{deliveryReturnLoans.length} đơn</Tag>}
-        >
-          <List
-            dataSource={deliveryReturnLoans}
-            locale={{ emptyText: "Không có đơn giao tận nhà nào cần trả." }}
-            renderItem={(loan) => (
-              <List.Item
-                actions={[
-                  loan.status === "BORROWING" ? (
-                    <Button
-                      type="primary"
-                      icon={<RollbackOutlined />}
-                      loading={returningLoanId === loan.id}
-                      onClick={() => handleRequestReturn(loan)}
-                    >
-                      Gửi yêu cầu trả
-                    </Button>
-                  ) : loan.status === "RETURNING" ? (
-                    <Tag color="purple">Đang chờ thư viện nhận lại</Tag>
-                  ) : (
-                    <Tag color="green">Đã trả</Tag>
-                  )
-                ]}
-              >
-                <List.Item.Meta
-                  avatar={<TruckOutlined />}
-                  title={
-                    <Space wrap>
-                      <strong>{loan.id}</strong>
-                      {statusTag(loan.status)}
-                    </Space>
-                  }
-                  description={
-                    <Space direction="vertical" size={6}>
-                      <span>{loan.bookTitle}</span>
-                      <span>Địa chỉ nhận trả: {loan.address || "Theo địa chỉ giao sách"}</span>
-                      <span>Hạn trả: {formatDate(loan.dueDate)}</span>
-                    </Space>
-                  }
-                />
-              </List.Item>
-            )}
-          />
-        </Card>
-      )
-    },
-    {
-      key: "fines",
-      label: "Nợ phạt",
-      icon: <QrcodeOutlined />,
-      children: (
-        <Card
-          className="glass-card"
-          title="Nợ & phạt"
-          extra={<Tag color={unpaidFines.length ? "red" : "green"}>{unpaidFines.length} chưa thanh toán</Tag>}
-        >
+  return (
+    <div className="page-shell reader-dashboard">
+      <div className="page-toolbar">
+        <div>
+          <p className="page-eyebrow">Nợ phạt</p>
+          <h1 className="page-title">Khoản phạt của bạn</h1>
+        </div>
+      </div>
+      <Card className="metric-card">
+        <Typography.Text type="secondary">Tổng nợ phạt</Typography.Text>
+        <strong>{formatCurrency(total)}</strong>
+      </Card>
+      <Card className="glass-card">
+        {fines.length ? (
           <List
             dataSource={fines}
-            locale={{ emptyText: "Không có phiếu phạt." }}
             renderItem={(fine) => (
               <List.Item
                 actions={[
-                  <Button key="details" icon={<EyeOutlined />} onClick={() => setSelectedFine(fine)}>
-                    Xem chi tiết
-                  </Button>,
-                  fine.status === "UNPAID" ? (
-                    <Button key="pay" type="primary" icon={<QrcodeOutlined />} onClick={() => setPayFine(fine)}>
-                      Thanh toán
-                    </Button>
-                  ) : (
-                    <Tag key="paid" color="green" icon={<CheckCircleOutlined />}>
-                      Đã thanh toán
-                    </Tag>
-                  )
+                  <Button icon={<EyeOutlined />} onClick={() => setSelectedFine(fine)}>Chi tiết</Button>,
+                  fine.status === "UNPAID" ? <Button type="primary" icon={<QrcodeOutlined />} onClick={() => setPayFine(fine)}>Thanh toán</Button> : <Tag color="green">Đã thanh toán</Tag>
                 ]}
               >
-                <List.Item.Meta
-                  avatar={fine.status === "UNPAID" ? <ClockCircleOutlined /> : <CheckCircleOutlined />}
-                  title={`${fine.id} - ${formatCurrency(fine.amount)}`}
-                  description={`${fine.reason} / ${fine.loanId}`}
-                />
+                <List.Item.Meta title={`${fine.loanId ? `Đơn #${fine.loanId}` : "Phiếu phạt"} - ${formatCurrency(fine.amount)}`} description={`${fine.reason} / ${fine.status === "UNPAID" ? "Chưa thanh toán" : "Đã thanh toán"}`} />
               </List.Item>
             )}
           />
-        </Card>
-      )
-    },
-    {
-      key: "wishlist",
-      label: "Yêu thích",
-      icon: <HeartOutlined />,
-      children: (
-        <Card className="glass-card" title="Sách yêu thích">
-          {wishlist.length ? (
-            <List
-              dataSource={wishlist}
-              renderItem={(book) => (
-                <List.Item actions={[<Link to={`/book/${book.id}`}>Xem sách</Link>]}>
-                  <List.Item.Meta
-                    avatar={<HeartOutlined />}
-                    title={book.title}
-                    description={(book.authors || []).join(", ")}
-                  />
-                </List.Item>
-              )}
-            />
-          ) : (
-            <Empty description="Chưa có sách yêu thích." image={Empty.PRESENTED_IMAGE_SIMPLE} />
-          )}
-        </Card>
-      )
-    }
-  ];
-
-  return (
-    <div className="page-shell">
-      <div className="reader-summary-grid">
-        <Card className="metric-card">
-          <Typography.Text type="secondary">Đơn đang xử lý</Typography.Text>
-          <strong>{formatNumber(loans.filter((loan) => loan.status !== "RETURNED").length)}</strong>
-        </Card>
-        <Card className="metric-card">
-          <Typography.Text type="secondary">Sách yêu thích</Typography.Text>
-          <strong>{formatNumber(wishlist.length)}</strong>
-        </Card>
-        <Card className="metric-card">
-          <Typography.Text type="secondary">Nợ phạt</Typography.Text>
-          <strong>{formatCurrency(unpaidFines.reduce((sum, fine) => sum + fine.amount, 0))}</strong>
-        </Card>
-        <Card className="metric-card">
-          <Typography.Text type="secondary">Giỏ mượn</Typography.Text>
-          <Link to="/cart">
-            <Button type="primary" icon={<ShoppingCartOutlined />}>
-              Mở giỏ
-            </Button>
-          </Link>
-        </Card>
-      </div>
-
-      <Card className="glass-card reader-tabs-card">
-        <Tabs activeKey={activeTab} onChange={(key) => setSearchParams({ tab: key })} items={tabItems} />
+        ) : (
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Bạn không có khoản phạt nào." />
+        )}
       </Card>
-
-      <Modal
-        open={Boolean(payFine)}
-        title="Thanh toán phạt bằng QR giả lập"
-        onCancel={() => setPayFine(null)}
-        footer={[
-          <Button key="close" onClick={() => setPayFine(null)}>
-            Đóng
-          </Button>,
-          <Button key="paid" type="primary" icon={<BankOutlined />} onClick={handlePayFine}>
-            Đã thanh toán
-          </Button>
-        ]}
-      >
+      <Modal open={Boolean(payFine)} title="Thanh toán phạt bằng QR giả lập" onCancel={() => setPayFine(null)} footer={[
+        <Button key="close" onClick={() => setPayFine(null)}>Đóng</Button>,
+        <Button key="paid" type="primary" icon={<BankOutlined />} onClick={handlePayFine}>Đã thanh toán</Button>
+      ]}>
         {payFine ? (
           <div className="payment-modal-body">
             <FakeQr label={payFine.id} />
             <Space direction="vertical">
-              <Tag color="blue" icon={<CreditCardOutlined />}>
-                Momo/VNPay
-              </Tag>
+              <Tag color="blue" icon={<CreditCardOutlined />}>Momo/VNPay</Tag>
               <Typography.Title level={4}>{formatCurrency(payFine.amount)}</Typography.Title>
               <Typography.Text>{payFine.reason}</Typography.Text>
-              <Typography.Text type="secondary">{payFine.id}</Typography.Text>
             </Space>
           </div>
         ) : null}
       </Modal>
-
-      <Modal
-        open={Boolean(selectedFine)}
-        title={`Chi tiết phiếu phạt #${selectedFine?.id}`}
-        onCancel={() => setSelectedFine(null)}
-        footer={[
-          <Button key="close" onClick={() => setSelectedFine(null)}>
-            Đóng
-          </Button>,
-          selectedFine?.status === "UNPAID" ? (
-            <Button
-              key="pay"
-              type="primary"
-              icon={<QrcodeOutlined />}
-              onClick={() => {
-                setPayFine(selectedFine);
-                setSelectedFine(null);
-              }}
-            >
-              Thanh toán ngay
-            </Button>
-          ) : null
-        ]}
-      >
+      <Modal open={Boolean(selectedFine)} title={`Chi tiết phiếu phạt #${selectedFine?.id}`} onCancel={() => setSelectedFine(null)} footer={<Button onClick={() => setSelectedFine(null)}>Đóng</Button>}>
         {selectedFine ? (
           <Descriptions column={1} bordered size="small">
-            <Descriptions.Item label="Mã phiếu phạt">#{selectedFine.id}</Descriptions.Item>
-            <Descriptions.Item label="Mã đơn mượn">{selectedFine.loanId ? `#${selectedFine.loanId}` : "-"}</Descriptions.Item>
-            <Descriptions.Item label="Số tiền phạt">
-              <Typography.Text type="danger" strong>{formatCurrency(selectedFine.amount)}</Typography.Text>
-            </Descriptions.Item>
-            <Descriptions.Item label="Lý do phạt">{selectedFine.reason}</Descriptions.Item>
-            <Descriptions.Item label="Trạng thái">
-              {selectedFine.status === "UNPAID" ? (
-                <Tag color="red">Chưa thanh toán</Tag>
-              ) : (
-                <Tag color="green" icon={<CheckCircleOutlined />}>Đã thanh toán</Tag>
-              )}
-            </Descriptions.Item>
-            <Descriptions.Item label="Ngày tạo">{formatDateTime(selectedFine.createdAt) || "-"}</Descriptions.Item>
-            {selectedFine.status === "PAID" ? (
-              <Descriptions.Item label="Ngày thu">{formatDateTime(selectedFine.paidAt) || "-"}</Descriptions.Item>
-            ) : null}
+            <Descriptions.Item label="Mã phiếu">#{selectedFine.id}</Descriptions.Item>
+            <Descriptions.Item label="Mã đơn">{selectedFine.loanId ? `#${selectedFine.loanId}` : "-"}</Descriptions.Item>
+            <Descriptions.Item label="Số tiền">{formatCurrency(selectedFine.amount)}</Descriptions.Item>
+            <Descriptions.Item label="Lý do">{selectedFine.reason}</Descriptions.Item>
+            <Descriptions.Item label="Trạng thái">{selectedFine.status === "UNPAID" ? <Tag color="red">Chưa thanh toán</Tag> : <Tag color="green">Đã thanh toán</Tag>}</Descriptions.Item>
           </Descriptions>
         ) : null}
       </Modal>
+    </div>
+  );
+}
+
+export function ReaderFavorites({ session }) {
+  const navigate = useNavigate();
+  const { wishlist } = useReaderData(session);
+  async function handleAddToCart(book) {
+    try {
+      await libraryGateway.addToCart(session.id, book.id);
+      window.dispatchEvent(new Event("cartUpdated"));
+      message.success("Đã thêm sách vào giỏ mượn.");
+      navigate("/reader/cart");
+    } catch (error) {
+      message.error(error?.message || "Không thể thêm sách vào giỏ mượn.");
+    }
+  }
+
+  return (
+    <div className="page-shell reader-dashboard">
+      <div className="page-toolbar">
+        <div>
+          <p className="page-eyebrow">Yêu thích</p>
+          <h1 className="page-title">Sách yêu thích</h1>
+        </div>
+      </div>
+      {wishlist.length ? (
+        <div className="reader-favorite-grid">
+          {wishlist.map((book) => (
+            <BookCard
+              key={book.id}
+              book={book}
+              onAction={handleAddToCart}
+              actionLabel="Thêm vào giỏ mượn"
+              className="reader-favorite-book-card"
+            />
+          ))}
+        </div>
+      ) : (
+        <Card className="glass-card"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có sách yêu thích." /></Card>
+      )}
+    </div>
+  );
+}
+
+export function ReaderCard({ session, onSessionUpdate }) {
+  const [kycForm] = Form.useForm();
+  const { user, setUser, loadReader } = useReaderData(session);
+  const [kycFileList, setKycFileList] = useState([]);
+  const [submittingKyc, setSubmittingKyc] = useState(false);
+  const [qrIssuedAt, setQrIssuedAt] = useState(() => Date.now());
+  const cardCode = user?.cardCode || "Chưa cấp thẻ";
+  const readerUserId = user?.id || session?.id;
+  const canEditKyc = user?.canEdit !== false && user?.kycStatus !== "VERIFIED";
+  const hasExistingKycDocument = Boolean(user?.idCardImageUrl);
+  const submitButtonLabel = hasExistingKycDocument || user?.kycStatus === "PENDING" ? "Cập nhật KYC" : "Gửi hồ sơ xác thực";
+
+  useEffect(() => {
+    setQrIssuedAt(Date.now());
+    const timer = window.setInterval(() => setQrIssuedAt(Date.now()), READER_QR_TTL_MS);
+    return () => window.clearInterval(timer);
+  }, [session?.id]);
+
+  useEffect(() => {
+    kycForm.setFieldsValue({
+      email: user?.email || session?.email || "",
+      phone: user?.phone || session?.phone || "",
+      address: user?.address || "",
+      idCardNumber: user?.idCardNumber || ""
+    });
+  }, [kycForm, session?.email, session?.phone, user]);
+
+  async function handleSubmitKyc(values) {
+    const selectedFile = kycFileList[0]?.originFileObj || null;
+    if (!hasExistingKycDocument && !selectedFile) {
+      message.error("Vui lòng tải ảnh CCCD hoặc thẻ sinh viên trước khi gửi hồ sơ.");
+      return;
+    }
+    setSubmittingKyc(true);
+    try {
+      const nextUser = await libraryGateway.saveMyKyc(session.id, values, selectedFile, Boolean(hasExistingKycDocument || user?.kycStatus === "PENDING"));
+      setUser(nextUser);
+      setKycFileList([]);
+      const nextSession = normalizeSession({ ...session, fullName: nextUser.fullName || session?.fullName, phone: nextUser.phone || "", studentCode: nextUser.studentCode || session?.studentCode, kycStatus: nextUser.kycStatus || session?.kycStatus });
+      writeSession(nextSession);
+      onSessionUpdate?.(nextSession);
+      message.success("Đã gửi hồ sơ xác thực.");
+    } catch (error) {
+      message.error(error?.message || "Không thể lưu hồ sơ xác thực.");
+    } finally {
+      setSubmittingKyc(false);
+    }
+  }
+
+  async function handleCancelKyc() {
+    try {
+      await libraryApi.users.cancelVerification();
+      message.success("Đã hủy xác thực hồ sơ thành công.");
+      await loadReader();
+    } catch (error) {
+      message.error(error?.message || "Không thể hủy xác thực.");
+    }
+  }
+
+  return (
+    <div className="page-shell reader-dashboard">
+      <div className="page-toolbar">
+        <div>
+          <p className="page-eyebrow">Thẻ thư viện</p>
+          <h1 className="page-title">Thẻ thư viện & KYC</h1>
+        </div>
+      </div>
+      <Row gutter={[18, 18]}>
+        <Col xs={24} lg={9}>
+          <Card className="glass-card reader-library-card">
+            <Space direction="vertical" size={14} style={{ width: "100%" }}>
+              <Space align="center" style={{ justifyContent: "space-between", width: "100%" }}>
+                <div>
+                  <Typography.Text type="secondary">BOOKHUB CARD</Typography.Text>
+                  <Typography.Title level={3} style={{ margin: 0 }}>{cardCode}</Typography.Title>
+                </div>
+                {kycTag(user?.kycStatus)}
+              </Space>
+              <QRCode value={buildReaderQrToken(readerUserId, qrIssuedAt)} size={128} bordered={false} />
+              <Typography.Text type="secondary">Làm mới lúc {formatQrTime(qrIssuedAt + READER_QR_TTL_MS)}</Typography.Text>
+            </Space>
+          </Card>
+        </Col>
+        <Col xs={24} lg={15}>
+          <Card className="glass-card" title="Thông tin thẻ thư viện">
+            <Descriptions column={1} bordered size="small">
+              <Descriptions.Item label="Họ tên">{user?.fullName || session?.fullName || "-"}</Descriptions.Item>
+              <Descriptions.Item label="Mã bạn đọc">{user?.studentCode || "-"}</Descriptions.Item>
+              <Descriptions.Item label="Email">{user?.email || session?.email || "-"}</Descriptions.Item>
+              <Descriptions.Item label="Số điện thoại">{user?.phone || "-"}</Descriptions.Item>
+              <Descriptions.Item label="Địa chỉ">{user?.address || "-"}</Descriptions.Item>
+              <Descriptions.Item label="Trạng thái">{kycTag(user?.kycStatus)}</Descriptions.Item>
+            </Descriptions>
+            {user?.kycStatus !== "VERIFIED" ? (
+              <Form form={kycForm} layout="vertical" onFinish={handleSubmitKyc} className="reader-kyc-form">
+                <Row gutter={14}>
+                  <Col xs={24} md={12}><Form.Item name="email" label="Email xác thực" rules={[{ required: true }, { type: "email" }]}><Input disabled={!canEditKyc} /></Form.Item></Col>
+                  <Col xs={24} md={12}><Form.Item name="phone" label="Số điện thoại" rules={[{ required: true }]}><Input disabled={!canEditKyc} /></Form.Item></Col>
+                  <Col xs={24}><Form.Item name="address" label="Địa chỉ" rules={[{ required: true }]}><Input.TextArea rows={2} disabled={!canEditKyc} /></Form.Item></Col>
+                  <Col xs={24} md={12}><Form.Item name="idCardNumber" label="Số CCCD / Mã sinh viên"><Input disabled={!canEditKyc} /></Form.Item></Col>
+                  <Col xs={24} md={12}>
+                    <Form.Item label="Ảnh CCCD / Thẻ sinh viên">
+                      <Upload accept=".jpg,.jpeg,.png,.webp" beforeUpload={() => false} disabled={!canEditKyc} fileList={kycFileList} maxCount={1} onChange={({ fileList }) => setKycFileList(fileList.slice(-1))}>
+                        <Button disabled={!canEditKyc} icon={<UploadOutlined />}>Chọn ảnh</Button>
+                      </Upload>
+                      {user?.idCardImageUrl ? <Button type="link" href={toAbsoluteMediaUrl(user.idCardImageUrl)} target="_blank" style={{ paddingInline: 0 }}>Xem ảnh đã lưu</Button> : null}
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Space>
+                  <Button type="primary" htmlType="submit" loading={submittingKyc} disabled={!canEditKyc}>{submitButtonLabel}</Button>
+                  {user?.kycStatus === "PENDING" ? <Popconfirm title="Hủy xác thực hồ sơ?" onConfirm={handleCancelKyc}><Button danger>Hủy xác thực</Button></Popconfirm> : null}
+                </Space>
+              </Form>
+            ) : <Alert type="success" showIcon message="Hồ sơ đã được xác thực." style={{ marginTop: 16 }} />}
+          </Card>
+        </Col>
+      </Row>
     </div>
   );
 }

@@ -1,17 +1,32 @@
 package com.library.mapper;
 
+import org.springframework.stereotype.Component;
+
 import com.library.dto.request.UserUpdateRequest;
 import com.library.dto.response.UserResponse;
 import com.library.entity.User;
-import org.mapstruct.Mapper;
-import org.mapstruct.MappingTarget;
 
-@Mapper(componentModel = "spring")
-public interface UserMapper {
-    
-    // Chuyển từ Entity -> DTO trả về cho Client
-    UserResponse toUserResponse(User user);
+@Component
+public class UserMapper {
 
-    // Copy dữ liệu từ Request đắp đè lên Entity cũ để Update
-    void updateUser(@MappingTarget User user, UserUpdateRequest request);
+    public UserResponse toUserResponse(User user) {
+        if (user == null) {
+            return null;
+        }
+
+        return UserResponse.builder()
+                .id(user.getId() != null ? user.getId().longValue() : null)
+                .email(user.getEmail())
+                .fullName(user.getFullName())
+                .role(user.getRole() != null ? user.getRole().name() : null)
+                .build();
+    }
+
+    public void updateUser(User user, UserUpdateRequest request) {
+        if (user == null || request == null) {
+            return;
+        }
+
+        user.setFullName(request.getFullName());
+    }
 }

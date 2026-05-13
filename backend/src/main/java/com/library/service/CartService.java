@@ -1,11 +1,14 @@
 package com.library.service;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.library.common.exception.BadRequestException;
 import com.library.entity.Book;
+import com.library.entity.BookStatus;
 import com.library.entity.Cart;
 import com.library.entity.CartItem;
 import com.library.entity.User;
@@ -27,7 +30,11 @@ public class CartService {
 
     @Transactional(readOnly = true)
     public List<CartItem> getItems(Integer userId) {
-        return cartItemRepository.findByCart_User_IdOrderByAddedAtDesc(userId);
+        return cartItemRepository.findByCart_User_IdOrderByAddedAtDesc(userId)
+                .stream()
+                .filter(item -> item.getBook() != null)
+                .filter(item -> item.getBook().getStatus() == null || item.getBook().getStatus() == BookStatus.ACTIVE)
+                .collect(Collectors.toList());
     }
 
     @Transactional
@@ -35,6 +42,7 @@ public class CartService {
         Cart cart = getOrCreateCart(userId);
         Book book = bookRepository.findById(bookId)
                 .orElseThrow(() -> new RuntimeException("Book not found."));
+        ensureBookCanBeBorrowed(book);
 
         return cartItemRepository.findByCart_IdAndBook_Id(cart.getId(), bookId)
                 .orElseGet(() -> {
@@ -53,6 +61,12 @@ public class CartService {
     @Transactional
     public void clear(Integer userId) {
         cartItemRepository.deleteByCart_User_Id(userId);
+    }
+
+    private void ensureBookCanBeBorrowed(Book book) {
+        if (book.getStatus() == BookStatus.ARCHIVED) {
+            throw new BadRequestException("Sach da duoc luu tru va khong the muon.");
+        }
     }
 
     private Cart getOrCreateCart(Integer userId) {

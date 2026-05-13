@@ -1,7 +1,7 @@
 import {
+  CalendarOutlined,
   DeleteOutlined,
   EnvironmentOutlined,
-  QrcodeOutlined,
   ShopOutlined,
   TruckOutlined
 } from "@ant-design/icons";
@@ -10,48 +10,100 @@ import {
   Button,
   Card,
   Col,
+  Divider,
   Empty,
   Form,
   Input,
-  InputNumber,
   List,
   Radio,
   Row,
+  Select,
   Space,
-  Steps,
   Tag,
   Typography,
   message
 } from "antd";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { toAbsoluteMediaUrl } from "../api/apiClient";
 import { libraryGateway } from "../api/libraryGateway";
-import { formatCurrency, formatNumber } from "../components/formatters";
+import { formatCurrency, formatDate, formatNumber } from "../components/formatters";
 
-function MockCover({ book }) {
+const BORROW_DAY_OPTIONS = [
+  { value: 7, label: "7 ngày" },
+  { value: 14, label: "14 ngày" },
+  { value: 21, label: "21 ngày" },
+  { value: 30, label: "30 ngày" }
+];
+
+function isImage(asset) {
+  return ["PNG", "JPG", "JPEG", "WEBP", "GIF"].includes(String(asset?.assetType || "").toUpperCase());
+}
+
+function CartBookCover({ book }) {
+  const coverUrl = toAbsoluteMediaUrl(book.primaryImageUrl);
+
+  if (coverUrl) {
+    return <img src={coverUrl} alt={book.title} className="cart-book-cover" />;
+  }
+
   return (
-    <div className="mock-cover mock-cover-small" style={{ "--cover-tone": book.coverTone }}>
+    <div className="mock-cover mock-cover-small cart-book-cover-fallback" style={{ "--cover-tone": book.coverTone }}>
       <strong>{book.title}</strong>
     </div>
   );
 }
 
-function FakeQr({ label }) {
+async function attachCartBookCovers(items) {
+  return Promise.all(
+    items.map(async (book) => {
+      if (book.primaryImageUrl) {
+        return book;
+      }
+
+      try {
+        const media = await libraryGateway.getBookMedia(book.id);
+        const coverAsset = media.find((asset) => asset.primary && isImage(asset)) || media.find(isImage);
+        return {
+          ...book,
+          primaryImageUrl: coverAsset?.fileUrl || ""
+        };
+      } catch {
+        return book;
+      }
+    })
+  );
+}
+
+function addDays(days) {
+  const date = new Date();
+  date.setDate(date.getDate() + Number(days || 14));
+  return date;
+}
+
+function SummaryRow({ label, value, strong = false }) {
   return (
-    <div className="fake-qr">
-      {Array.from({ length: 49 }).map((_, index) => (
-        <i key={index} className={(index + label.length) % 3 === 0 ? "on" : ""} />
-      ))}
+    <div className={`cart-summary-row ${strong ? "strong" : ""}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
     </div>
   );
 }
 
-export default function Cart({ session, onLogout }) {
+export default function Cart({ session }) {
   const navigate = useNavigate();
   const [form] = Form.useForm();
   const receiveMethod = Form.useWatch("receiveMethod", form) || "DELIVERY";
+  const dueDays = Number(Form.useWatch("dueDays", form) || 14);
   const [cart, setCart] = useState([]);
   const [user, setUser] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const deliveryFee = receiveMethod === "DELIVERY" ? 18000 : 0;
+  const depositAmount = 0;
+  const totalPayment = deliveryFee + depositAmount;
+  const expectedDueDate = useMemo(() => addDays(dueDays), [dueDays]);
+  const canSubmit = Boolean(cart.length);
 
   async function loadCart() {
     if (!session?.id) {
@@ -64,14 +116,21 @@ export default function Cart({ session, onLogout }) {
       libraryGateway.getCart(session.id),
       libraryGateway.getUser(session.id)
     ]);
-    setCart(nextCart);
+
+    const nextPhone = nextUser?.phone || nextUser?.verificationPhone || session.phone || "";
+    const nextAddress = nextUser?.address || nextUser?.verificationAddress || "";
+    const nextName = nextUser?.fullName || session.fullName || "";
+    const savedMethod = form.getFieldValue("receiveMethod");
+
+    setCart(await attachCartBookCovers(nextCart));
     setUser(nextUser);
     form.setFieldsValue({
-      fullName: session.fullName,
-      phone: session.phone,
-      address: nextUser?.address,
-      receiveMethod: form.getFieldValue("receiveMethod") || "DELIVERY",
-      dueDays: form.getFieldValue("dueDays") || 14
+      fullName: form.getFieldValue("fullName") || nextName,
+      phone: form.getFieldValue("phone") || nextPhone,
+      address: form.getFieldValue("address") || nextAddress,
+      receiveMethod: savedMethod || "DELIVERY",
+      dueDays: form.getFieldValue("dueDays") || 14,
+      note: form.getFieldValue("note") || ""
     });
   }
 
@@ -86,159 +145,192 @@ export default function Cart({ session, onLogout }) {
   }
 
   async function handleCheckout(values) {
+    if (!cart.length) {
+      message.warning("Giỏ mượn đang trống.");
+      return;
+    }
+
+    setSubmitting(true);
     try {
       const loan = await libraryGateway.checkout(session.id, values);
-      message.success("Đã tạo đơn mượn.");
-      navigate("/reader", { state: { loanId: loan.id } });
+      message.success(`Đã gửi yêu cầu mượn #${loan.id}.`);
+      navigate("/reader/orders", { state: { loanId: loan.id } });
       window.dispatchEvent(new Event("cartUpdated"));
     } catch (error) {
       message.error(error.message);
+    } finally {
+      setSubmitting(false);
     }
   }
 
-  const deliveryFee = receiveMethod === "DELIVERY" ? 18000 : 0;
-
   return (
-    <div className="page-shell">
-        <div className="page-toolbar">
-          <div>
-            <p className="page-eyebrow">Giỏ mượn</p>
-            <h1 className="page-title">Checkout sách mượn</h1>
-            <p className="page-copy">
-              Chọn sách, hình thức nhận và tạo đơn mượn trực tuyến.
-            </p>
-          </div>
+    <div className="page-shell reader-cart-page">
+      <div className="page-toolbar cart-page-header">
+        <div>
+          <p className="page-eyebrow">Giỏ mượn</p>
+          <h1 className="page-title">Gửi yêu cầu mượn sách</h1>
+          <p className="page-copy">Kiểm tra sách, chọn hình thức nhận và gửi yêu cầu tới thư viện.</p>
         </div>
+        <Tag color={cart.length ? "blue" : "default"}>{formatNumber(cart.length)} cuốn trong giỏ</Tag>
+      </div>
 
-        <Row gutter={[20, 20]} align="start">
-          <Col xs={24} lg={10}>
-            <Card className="glass-card" title={`Sách trong giỏ (${cart.length})`}>
-              {cart.length ? (
-                <List
-                  dataSource={cart}
-                  renderItem={(book) => (
-                    <List.Item
-                      actions={[
-                        <Button danger icon={<DeleteOutlined />} onClick={() => removeBook(book.id)}>
-                          Xóa
-                        </Button>
-                      ]}
-                    >
-                      <List.Item.Meta
-                        avatar={<MockCover book={book} />}
-                        title={<Link to={`/book/${book.id}`}>{book.title}</Link>}
-                        description={`${(book.authors || []).join(", ")} - Còn ${formatNumber(book.stockAvailable)}`}
-                      />
-                    </List.Item>
-                  )}
-                />
-              ) : (
-                <Empty
-                  description="Giỏ mượn đang trống."
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                >
-                  <Link to="/">
-                    <Button type="primary">Chọn sách</Button>
-                  </Link>
-                </Empty>
-              )}
-            </Card>
-          </Col>
-
-          <Col xs={24} lg={14}>
-            <Card className="glass-card" title="Thông tin nhận sách">
-              <Steps
-                size="small"
-                current={0}
-                items={[
-                  { title: "Tạo đơn" },
-                  { title: receiveMethod === "DELIVERY" ? "Đang giao" : "Sẵn sàng nhận" },
-                  { title: "Đang mượn" },
-                  { title: "Đã trả" }
-                ]}
-                style={{ marginBottom: 18 }}
-              />
-
-              <Form
-                form={form}
-                layout="vertical"
-                initialValues={{
-                  receiveMethod: "DELIVERY",
-                  fullName: session?.fullName,
-                  phone: session?.phone,
-                  address: user?.address,
-                  dueDays: 14
-                }}
-                onFinish={handleCheckout}
-              >
-                <Form.Item name="receiveMethod" label="Hình thức nhận sách">
-                  <Radio.Group className="receive-method-group">
-                    <Radio.Button value="PICKUP">
-                      <ShopOutlined /> Tại quầy
-                    </Radio.Button>
-                    <Radio.Button value="DELIVERY">
-                      <TruckOutlined /> Giao tận nhà
-                    </Radio.Button>
-                  </Radio.Group>
-                </Form.Item>
-
-                <Row gutter={[14, 0]}>
-                  <Col xs={24} md={12}>
-                    <Form.Item name="fullName" label="Người nhận" rules={[{ required: true }]}>
-                      <Input size="large" />
-                    </Form.Item>
-                  </Col>
-                  <Col xs={24} md={12}>
-                    <Form.Item name="phone" label="Số điện thoại" rules={[{ required: true }]}>
-                      <Input size="large" />
-                    </Form.Item>
-                  </Col>
-                </Row>
-
-                {receiveMethod === "DELIVERY" ? (
-                  <Form.Item name="address" label="Địa chỉ giao hàng" rules={[{ required: true }]}>
-                    <Input size="large" prefix={<EnvironmentOutlined />} />
-                  </Form.Item>
-                ) : (
-                  <Alert
-                    type="info"
-                    showIcon
-                    icon={<QrcodeOutlined />}
-                    message="Nhận tại quầy"
-                    description="Khi đến thư viện, đưa mã QR dưới đây cho thủ thư để xác nhận đơn mượn."
-                    style={{ marginBottom: 18 }}
-                  />
+      <Row gutter={[18, 18]} align="start" className="cart-checkout-grid">
+        <Col xs={24} lg={11} xl={10}>
+          <Card className="glass-card cart-books-card" title={`Sách trong giỏ (${formatNumber(cart.length)})`}>
+            {cart.length ? (
+              <List
+                className="cart-book-list"
+                dataSource={cart}
+                renderItem={(book) => (
+                  <List.Item
+                    className="cart-book-item"
+                    actions={[
+                      <Button
+                        danger
+                        type="text"
+                        icon={<DeleteOutlined />}
+                        onClick={() => removeBook(book.id)}
+                      >
+                        Xóa
+                      </Button>
+                    ]}
+                  >
+                    <List.Item.Meta
+                      avatar={<CartBookCover book={book} />}
+                      title={<Link to={`/book/${book.id}`}>{book.title}</Link>}
+                      description={
+                        <Space direction="vertical" size={2}>
+                          <Typography.Text type="secondary">
+                            {(book.authors || []).join(", ")}
+                          </Typography.Text>
+                          <Tag color={Number(book.stockAvailable || 0) > 0 ? "green" : "red"}>
+                            Còn {formatNumber(book.stockAvailable)} cuốn
+                          </Tag>
+                        </Space>
+                      }
+                    />
+                  </List.Item>
                 )}
+              />
+            ) : (
+              <Empty description="Giỏ mượn đang trống." image={Empty.PRESENTED_IMAGE_SIMPLE}>
+                <Link to="/">
+                  <Button type="primary">Chọn sách</Button>
+                </Link>
+              </Empty>
+            )}
+          </Card>
+        </Col>
 
-                {receiveMethod === "PICKUP" ? (
-                  <div className="checkout-qr-row">
-                    <FakeQr label={session?.studentCode || "PICKUP"} />
-                    <div>
-                      <Typography.Text strong>QR nhận sách tại quầy</Typography.Text>
-                      <p className="subtle">Mã giả lập: PICKUP-{session?.studentCode || "GUEST"}</p>
-                    </div>
-                  </div>
-                ) : null}
+        <Col xs={24} lg={13} xl={14}>
+          <Form
+            form={form}
+            layout="vertical"
+            className="cart-receiver-form"
+            initialValues={{
+              receiveMethod: "DELIVERY",
+              fullName: session?.fullName,
+              phone: session?.phone,
+              address: user?.address,
+              dueDays: 14,
+              note: ""
+            }}
+            onFinish={handleCheckout}
+          >
+            <Card className="glass-card cart-info-card" title="Thông tin nhận sách">
+              <Form.Item name="receiveMethod" label="Hình thức nhận sách">
+                <Radio.Group className="receive-method-group cart-receive-method">
+                  <Radio.Button value="PICKUP">
+                    <ShopOutlined /> Tại quầy
+                  </Radio.Button>
+                  <Radio.Button value="DELIVERY">
+                    <TruckOutlined /> Giao tận nhà
+                  </Radio.Button>
+                </Radio.Group>
+              </Form.Item>
 
-                <Form.Item name="dueDays" label="Số ngày mượn">
-                  <InputNumber min={7} max={30} style={{ width: "100%" }} />
+              <Row gutter={[12, 0]}>
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    name="fullName"
+                    label="Người nhận"
+                    rules={[{ required: true, message: "Vui lòng nhập người nhận." }]}
+                  >
+                    <Input placeholder="Họ tên người nhận" />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    name="phone"
+                    label="Số điện thoại"
+                    rules={[{ required: true, message: "Vui lòng nhập số điện thoại." }]}
+                  >
+                    <Input placeholder="Số điện thoại liên hệ" />
+                  </Form.Item>
+                </Col>
+              </Row>
+
+              {receiveMethod === "DELIVERY" ? (
+                <Form.Item
+                  name="address"
+                  label="Địa chỉ giao tận nhà"
+                  rules={[{ required: true, message: "Vui lòng nhập địa chỉ giao tận nhà." }]}
+                >
+                  <Input prefix={<EnvironmentOutlined />} placeholder="Số nhà, đường, phường/xã, quận/huyện" />
                 </Form.Item>
+              ) : (
+                <Alert
+                  type="info"
+                  showIcon
+                  message="Nhận tại quầy thư viện"
+                  description="Khi đơn được duyệt, bạn đến quầy lưu thông để nhận sách theo mã đơn."
+                  className="cart-pickup-alert"
+                />
+              )}
 
-                <Card size="small" className="pickup-note-card">
-                  <Space direction="vertical" size={4}>
-                    <Typography.Text strong>Tạm tính</Typography.Text>
-                    <Typography.Text>Số sách: {formatNumber(cart.length)}</Typography.Text>
-                    <Typography.Text>Phí giao hàng: {formatCurrency(deliveryFee)}</Typography.Text>
-                  </Space>
-                </Card>
-
-                <Button type="primary" htmlType="submit" size="large" disabled={!cart.length} block>
-                  Tạo đơn mượn
-                </Button>
-              </Form>
+              <Row gutter={[12, 0]}>
+                <Col xs={24} md={10}>
+                  <Form.Item name="dueDays" label="Số ngày mượn">
+                    <Select options={BORROW_DAY_OPTIONS} />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={14}>
+                  <Form.Item name="note" label="Ghi chú">
+                    <Input.TextArea rows={2} placeholder="Ghi chú ngắn cho thư viện nếu cần" />
+                  </Form.Item>
+                </Col>
+              </Row>
             </Card>
-          </Col>
-        </Row>
+
+            <Card className="glass-card cart-summary-card" title="Tóm tắt đơn mượn">
+              <SummaryRow label="Số sách" value={`${formatNumber(cart.length)} cuốn`} />
+              <SummaryRow label="Hình thức nhận" value={receiveMethod === "DELIVERY" ? "Giao tận nhà" : "Tại quầy"} />
+              <SummaryRow label="Số ngày mượn" value={`${formatNumber(dueDays)} ngày`} />
+              <SummaryRow label="Hạn trả dự kiến" value={formatDate(expectedDueDate)} />
+              <SummaryRow label="Phí giao" value={formatCurrency(deliveryFee)} />
+              <SummaryRow label="Tiền cọc" value={formatCurrency(depositAmount)} />
+              <Divider />
+              <SummaryRow label="Tổng thanh toán" value={formatCurrency(totalPayment)} strong />
+              {totalPayment > 0 ? (
+                <Typography.Text type="secondary" className="cart-summary-note">
+                  Phí hiển thị để demo, thư viện sẽ xác nhận khi duyệt đơn.
+                </Typography.Text>
+              ) : null}
+              <Button
+                type="primary"
+                htmlType="submit"
+                size="large"
+                block
+                loading={submitting}
+                disabled={!canSubmit}
+                icon={<CalendarOutlined />}
+              >
+                Gửi yêu cầu mượn
+              </Button>
+            </Card>
+          </Form>
+        </Col>
+      </Row>
     </div>
   );
 }

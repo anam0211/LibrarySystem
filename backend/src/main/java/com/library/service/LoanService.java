@@ -25,6 +25,7 @@ import com.library.dto.response.AdminLoanKanbanResponseDTO;
 import com.library.dto.response.LoanTrackingItemResponseDTO;
 import com.library.dto.response.LoanTrackingResponseDTO;
 import com.library.entity.Book;
+import com.library.entity.BookStatus;
 import com.library.entity.DeliveryMethod;
 import com.library.entity.Loan;
 import com.library.entity.LoanItem;
@@ -66,6 +67,7 @@ public class LoanService {
     private final LoanRepository loanRepository;
     private final BookRepository bookRepository;
     private final UserRepository userRepository;
+    private final NotificationService notificationService;
 
     @Transactional
     public Loan checkoutBooks(CheckoutRequestDTO request, Integer processedById) {
@@ -90,7 +92,9 @@ public class LoanService {
                 .build();
 
         addLoanItemsFromCheckoutRequest(loan, request, LoanItemStatus.BORROWED, loanedAt, dueAt);
-        return loanRepository.save(loan);
+        Loan savedLoan = loanRepository.save(loan);
+        notificationService.notifyLoanStatus(savedLoan);
+        return savedLoan;
     }
 
     @Transactional
@@ -112,7 +116,9 @@ public class LoanService {
                 .build();
 
         addLoanItemsFromCheckoutRequest(loan, request, LoanItemStatus.PENDING, null, null);
-        return loanRepository.save(loan);
+        Loan savedLoan = loanRepository.save(loan);
+        notificationService.notifyLoanStatus(savedLoan);
+        return savedLoan;
     }
 
     @Transactional
@@ -133,7 +139,9 @@ public class LoanService {
                 .build();
 
         addLoanItemsFromBookIds(loan, request.getBookIds(), LoanItemStatus.PENDING, null, null);
-        return loanRepository.save(loan);
+        Loan savedLoan = loanRepository.save(loan);
+        notificationService.notifyLoanStatus(savedLoan);
+        return savedLoan;
     }
 
     @Transactional
@@ -157,7 +165,10 @@ public class LoanService {
             loan.setClosedAt(LocalDateTime.now());
         }
 
-        loanRepository.save(loan);
+        Loan savedLoan = loanRepository.save(loan);
+        if (allProcessed) {
+            notificationService.notifyLoanStatus(savedLoan);
+        }
     }
 
     @Transactional(readOnly = true)
@@ -236,7 +247,9 @@ public class LoanService {
                 .build();
 
         addLoanItemsFromBookIds(loan, List.of(bookId), LoanItemStatus.PENDING, null, null);
-        return loanRepository.save(loan);
+        Loan savedLoan = loanRepository.save(loan);
+        notificationService.notifyLoanStatus(savedLoan);
+        return savedLoan;
     }
 
     @Transactional(readOnly = true)
@@ -256,7 +269,9 @@ public class LoanService {
         loan.setProcessedBy(librarian);
         loan.setStatus(LoanStatus.PREPARING);
         appendNote(loan, "Reservation confirmed.");
-        return loanRepository.save(loan);
+        Loan savedLoan = loanRepository.save(loan);
+        notificationService.notifyLoanStatus(savedLoan);
+        return savedLoan;
     }
 
     @Transactional
@@ -273,16 +288,23 @@ public class LoanService {
         loan.setClosedAt(LocalDateTime.now());
         appendNote(loan, "Cancelled: " + normalizeText(reason));
         releaseReservedStock(loan, LocalDateTime.now());
-        return loanRepository.save(loan);
+        Loan savedLoan = loanRepository.save(loan);
+        notificationService.notifyLoanStatus(savedLoan);
+        return savedLoan;
     }
 
     @Transactional
     public Loan updateStatus(Integer loanId, String statusValue) {
         Loan loan = findLoanById(loanId);
         LoanStatus newStatus = resolveLoanStatus(statusValue);
+        LoanStatus oldStatus = loan.getStatus();
         validateStatusTransition(loan, newStatus);
         applyStatusChange(loan, newStatus, null);
-        return loanRepository.save(loan);
+        Loan savedLoan = loanRepository.save(loan);
+        if (oldStatus != newStatus) {
+            notificationService.notifyLoanStatus(savedLoan);
+        }
+        return savedLoan;
     }
 
     @Transactional(readOnly = true)
@@ -307,6 +329,7 @@ public class LoanService {
         Loan loan = findLoanById(loanId);
         User staff = findUserByEmail(staffEmail, "Khong tim thay tai khoan nhan vien.");
         LoanStatus newStatus = resolveLoanStatus(request.getNewStatus());
+        LoanStatus oldStatus = loan.getStatus();
 
         if (!KANBAN_STATUSES.contains(newStatus) && newStatus != LoanStatus.EXPIRED && newStatus != LoanStatus.CANCELLED) {
             throw new BadRequestException("Trang thai cap nhat khong hop le cho quy trinh muon sach.");
@@ -324,7 +347,11 @@ public class LoanService {
         if (newStatus == LoanStatus.SHIPPING) {
             loan.setTrackingCode(normalizeText(request.getTrackingCode()));
         }
-        return loanRepository.save(loan);
+        Loan savedLoan = loanRepository.save(loan);
+        if (oldStatus != newStatus) {
+            notificationService.notifyLoanStatus(savedLoan);
+        }
+        return savedLoan;
     }
 
     @Transactional
@@ -346,7 +373,9 @@ public class LoanService {
                 .forEach(item -> item.setStatus(LoanItemStatus.RETURNING));
 
         appendNote(loan, "Return requested by user.");
-        return loanRepository.save(loan);
+        Loan savedLoan = loanRepository.save(loan);
+        notificationService.notifyLoanStatus(savedLoan);
+        return savedLoan;
     }
 
     @Transactional
@@ -398,7 +427,9 @@ public class LoanService {
         loan.setProcessedBy(staff);
         loan.setStatus(LoanStatus.CLOSED);
         loan.setClosedAt(now);
-        return loanRepository.save(loan);
+        Loan savedLoan = loanRepository.save(loan);
+        notificationService.notifyLoanStatus(savedLoan);
+        return savedLoan;
     }
 
     private void addLoanItemsFromCheckoutRequest(
@@ -468,11 +499,19 @@ public class LoanService {
     }
 
     private void reserveBookStock(Book book, int quantity) {
+        ensureBookCanBeBorrowed(book);
         int available = book.getStockAvailable() == null ? 0 : book.getStockAvailable();
         if (available < quantity) {
             throw new BadRequestException("Sach '" + book.getTitle() + "' da het hoac khong du ton kho.");
         }
         book.setStockAvailable(available - quantity);
+    }
+
+    private void ensureBookCanBeBorrowed(Book book) {
+        BookStatus status = book.getStatus() == null ? BookStatus.ACTIVE : book.getStatus();
+        if (status == BookStatus.ARCHIVED) {
+            throw new BadRequestException("Sach '" + book.getTitle() + "' da duoc luu tru va khong the muon.");
+        }
     }
 
     private void incrementStock(Book book) {

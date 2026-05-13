@@ -33,6 +33,8 @@ public class BookResponseDTO {
     BigDecimal originalPrice;
     Float averageRating;
     Integer reviewCount;
+    Integer borrowCount;
+    Integer favoriteCount;
     String status;
     Boolean available;
     String primaryImageUrl;

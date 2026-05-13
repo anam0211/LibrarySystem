@@ -13,6 +13,7 @@ import com.library.entity.WishlistId;
 public interface WishlistRepository extends JpaRepository<Wishlist, WishlistId> {
     @EntityGraph(attributePaths = {"book", "user"})
     List<Wishlist> findByUser_IdOrderByCreatedAtDesc(Integer userId);
+    long countByBook_Id(Integer bookId);
     boolean existsByUser_IdAndBook_Id(Integer userId, Integer bookId);
     void deleteByUser_IdAndBook_Id(Integer userId, Integer bookId);
 }

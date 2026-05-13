@@ -26,6 +26,7 @@ public class BookController {
             @RequestParam(required = false) Integer categoryId,
             @RequestParam(required = false) Integer publisherId,
             @RequestParam(required = false) Integer publishYear,
+            @RequestParam(required = false) String status,
             @RequestParam(required = false) Boolean available,
             @RequestParam(defaultValue = "createdAt") String sortBy,
             @RequestParam(defaultValue = "desc") String sortDir,
@@ -33,7 +34,7 @@ public class BookController {
             @RequestParam(defaultValue = "10") int size
     ) {
         return ApiResponse.success(
-                bookService.getBooks(keyword, authorId, categoryId, publisherId, publishYear, available, sortBy, sortDir, page, size)
+                bookService.getBooks(keyword, authorId, categoryId, publisherId, publishYear, status, available, sortBy, sortDir, page, size)
         );
     }
 

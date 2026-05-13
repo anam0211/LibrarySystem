@@ -1,4 +1,13 @@
-import { CheckCircleOutlined, CheckSquareOutlined, MailOutlined, NotificationOutlined } from "@ant-design/icons";
+import {
+  BellOutlined,
+  CheckCircleOutlined,
+  CheckSquareOutlined,
+  ClockCircleOutlined,
+  DollarOutlined,
+  NotificationOutlined,
+  ReadOutlined,
+  WarningOutlined
+} from "@ant-design/icons";
 import {
   Button,
   Card,
@@ -14,10 +23,19 @@ import { formatDateTime } from "../components/formatters";
 import PageHeader from "../components/PageHeader";
 
 const TYPE_LABELS = {
+  LOAN_STATUS: "Trạng thái mượn sách",
   DUE_SOON: "Sắp đến hạn",
   OVERDUE: "Quá hạn",
   FINE_CREATED: "Phát sinh phí phạt",
   GENERIC: "Hệ thống"
+};
+
+const TYPE_META = {
+  LOAN_STATUS: { color: "blue", icon: <ReadOutlined /> },
+  DUE_SOON: { color: "gold", icon: <ClockCircleOutlined /> },
+  OVERDUE: { color: "red", icon: <WarningOutlined /> },
+  FINE_CREATED: { color: "volcano", icon: <DollarOutlined /> },
+  GENERIC: { color: "default", icon: <BellOutlined /> }
 };
 
 export default function Notifications() {
@@ -46,6 +64,7 @@ export default function Notifications() {
     try {
       await libraryApi.notifications.markAsRead(item.notificationId);
       message.success("Đã đánh dấu đã đọc.");
+      window.dispatchEvent(new Event("notificationUpdated"));
       loadNotifications();
     } catch (error) {
       message.error(error.message);
@@ -61,6 +80,7 @@ export default function Notifications() {
       // Gọi API đánh dấu đã đọc cho tất cả các thông báo chưa đọc cùng lúc
       await Promise.all(unreadNotifs.map((item) => libraryApi.notifications.markAsRead(item.notificationId)));
       message.success("Đã đánh dấu tất cả là đã đọc.");
+      window.dispatchEvent(new Event("notificationUpdated"));
       loadNotifications();
     } catch (error) {
       message.error(error.message);
@@ -91,40 +111,45 @@ export default function Notifications() {
           className="compact-list"
           locale={{ emptyText: "Chưa có thông báo nào." }}
           dataSource={notifications}
-          renderItem={(item) => (
-            <List.Item
-              actions={[
-                item.readAt ? (
-                  <Tag color="green" icon={<CheckCircleOutlined />}>
-                    Đã đọc
-                  </Tag>
-                ) : (
-                  <Button type="link" onClick={() => handleMarkAsRead(item)}>
-                    Đánh dấu đã đọc
-                  </Button>
-                )
-              ]}
-            >
-              <List.Item.Meta
-                avatar={<NotificationOutlined style={{ fontSize: 20, color: "#00a260" }} />}
-                title={
-                  <Space wrap>
-                    <Typography.Text strong>{item.subject || "Thông báo hệ thống"}</Typography.Text>
-                    <Tag>{TYPE_LABELS[item.type] || item.type}</Tag>
-                    <Tag icon={<MailOutlined />}>{item.channel}</Tag>
-                  </Space>
-                }
-                description={
-                  <Space direction="vertical" size={4}>
-                    <Typography.Text type="secondary">{item.body}</Typography.Text>
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      Tạo lúc {formatDateTime(item.createdAt)}
-                    </Typography.Text>
-                  </Space>
-                }
-              />
-            </List.Item>
-          )}
+          renderItem={(item) => {
+            const typeMeta = TYPE_META[item.type] || TYPE_META.GENERIC;
+
+            return (
+              <List.Item
+                actions={[
+                  item.readAt ? (
+                    <Tag color="green" icon={<CheckCircleOutlined />}>
+                      Đã đọc
+                    </Tag>
+                  ) : (
+                    <Button type="link" onClick={() => handleMarkAsRead(item)}>
+                      Đánh dấu đã đọc
+                    </Button>
+                  )
+                ]}
+              >
+                <List.Item.Meta
+                  avatar={<NotificationOutlined style={{ fontSize: 20, color: item.readAt ? "#6b7280" : "#00a260" }} />}
+                  title={
+                    <Space wrap>
+                      <Typography.Text strong>{item.subject || "Thông báo hệ thống"}</Typography.Text>
+                      <Tag color={typeMeta.color} icon={typeMeta.icon}>{TYPE_LABELS[item.type] || item.type}</Tag>
+                      {!item.readAt ? <Tag color="green">Mới</Tag> : null}
+                      {item.relatedLoanId ? <Tag>Phiếu #{item.relatedLoanId}</Tag> : null}
+                    </Space>
+                  }
+                  description={
+                    <Space direction="vertical" size={4}>
+                      <Typography.Text type="secondary">{item.body}</Typography.Text>
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        {item.sentAt ? "Gửi lúc" : "Tạo lúc"} {formatDateTime(item.sentAt || item.createdAt)}
+                      </Typography.Text>
+                    </Space>
+                  }
+                />
+              </List.Item>
+            );
+          }}
         />
       </Card>
     </div>

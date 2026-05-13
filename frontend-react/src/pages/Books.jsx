@@ -32,6 +32,7 @@ const DEFAULT_FILTERS = {
   authorId: undefined,
   categoryId: undefined,
   publisherId: undefined,
+  status: "ALL",
   available: undefined,
   sortBy: "createdAt",
   sortDir: "desc",
@@ -74,6 +75,14 @@ function mapBookToForm(book) {
   };
 }
 
+function renderBookStatusTag(status, stockAvailable) {
+  if (status === "ARCHIVED") {
+    return <Tag color="default">ARCHIVED</Tag>;
+  }
+
+  return <Tag color={Number(stockAvailable || 0) > 0 ? "green" : "gold"}>ACTIVE</Tag>;
+}
+
 export default function Books() {
   const [filtersForm] = Form.useForm();
   const [loading, setLoading] = useState(true);
@@ -100,7 +109,8 @@ export default function Books() {
         libraryApi.books.list({
           ...nextFilters,
           available:
-            nextFilters.available === undefined ? undefined : nextFilters.available === "true"
+            nextFilters.available === undefined ? undefined : nextFilters.available === "true",
+          status: nextFilters.status || "ALL"
         })
       ]);
 
@@ -251,6 +261,15 @@ export default function Books() {
             <Form.Item name="publisherId" label="Nhà xuất bản" style={{ minWidth: 180 }}>
               <Select allowClear options={asSelectOptions(publishers)} />
             </Form.Item>
+            <Form.Item name="status" label="Trạng thái" style={{ minWidth: 160 }}>
+              <Select
+                options={[
+                  { label: "Tất cả", value: "ALL" },
+                  { label: "ACTIVE", value: "ACTIVE" },
+                  { label: "ARCHIVED", value: "ARCHIVED" }
+                ]}
+              />
+            </Form.Item>
             <Form.Item name="available" label="Tình trạng" style={{ minWidth: 160 }}>
               <Select
                 allowClear
@@ -317,9 +336,7 @@ export default function Books() {
             {
               title: "Trạng thái",
               dataIndex: "status",
-              render: (value, record) => (
-                <Tag color={Number(record.stockAvailable || 0) > 0 ? "green" : "red"}>{value}</Tag>
-              )
+              render: (value, record) => renderBookStatusTag(value, record.stockAvailable)
             },
             {
               title: "Thao tác",

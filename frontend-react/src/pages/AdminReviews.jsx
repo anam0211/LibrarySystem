@@ -26,7 +26,7 @@ export default function AdminReviews() {
       <PageHeader
         eyebrow="Cộng đồng"
         title="Quản lý review sách"
-        description="Theo dõi đánh giá sao và ẩn các bình luận không phù hợp trong mock data."
+        description="Theo dõi đánh giá sao và ẩn các bình luận không phù hợp."
       />
 
       <Card

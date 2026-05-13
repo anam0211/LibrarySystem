@@ -27,6 +27,7 @@ public class SearchController {
             @RequestParam(required = false) Integer categoryId,
             @RequestParam(required = false) Integer publisherId,
             @RequestParam(required = false) Integer publishYear,
+            @RequestParam(required = false) String status,
             @RequestParam(required = false) Boolean available,
             @RequestParam(defaultValue = "relevance") String sortBy,
             @RequestParam(defaultValue = "desc") String sortDir,
@@ -34,7 +35,7 @@ public class SearchController {
             @RequestParam(defaultValue = "10") int size
     ) {
         return ApiResponse.success(
-                searchService.searchBooks(keyword, authorId, categoryId, publisherId, publishYear, available, sortBy, sortDir, page, size)
+                searchService.searchBooks(keyword, authorId, categoryId, publisherId, publishYear, status, available, sortBy, sortDir, page, size)
         );
     }
 
