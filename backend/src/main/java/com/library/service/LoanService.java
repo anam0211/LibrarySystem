@@ -76,6 +76,9 @@ public class LoanService {
         DeliveryMethod deliveryMethod = resolveDeliveryMethod(request.getDeliveryMethod());
         validateDeliveryDetails(deliveryMethod, request.getDeliveryAddress(), request.getDeliveryPhone());
 
+        int totalQty = request.getItems() != null ? request.getItems().stream().mapToInt(item -> item.getQty() != null ? item.getQty() : 1).sum() : 0;
+        checkMembershipBorrowLimit(borrower, totalQty);
+
         LocalDateTime loanedAt = LocalDateTime.now();
         LocalDateTime dueAt = loanedAt.plusDays(resolveDueDays(request.getDueDays()));
 
@@ -105,6 +108,9 @@ public class LoanService {
         DeliveryMethod deliveryMethod = resolveDeliveryMethod(request.getDeliveryMethod());
         validateDeliveryDetails(deliveryMethod, request.getDeliveryAddress(), request.getDeliveryPhone());
 
+        int totalQty = request.getItems() != null ? request.getItems().stream().mapToInt(item -> item.getQty() != null ? item.getQty() : 1).sum() : 0;
+        checkMembershipBorrowLimit(borrower, totalQty);
+
         Loan loan = Loan.builder()
                 .borrower(borrower)
                 .status(LoanStatus.PENDING)
@@ -128,6 +134,9 @@ public class LoanService {
 
         DeliveryMethod deliveryMethod = resolveDeliveryMethod(request.getDeliveryMethod());
         validateDeliveryDetails(deliveryMethod, request.getAddress(), request.getPhone());
+
+        int totalQty = request.getBookIds() != null ? request.getBookIds().size() : 0;
+        checkMembershipBorrowLimit(borrower, totalQty);
 
         Loan loan = Loan.builder()
                 .borrower(borrower)
@@ -236,6 +245,8 @@ public class LoanService {
 
         DeliveryMethod deliveryMethod = resolveDeliveryMethod(deliveryMethodValue);
         validateDeliveryDetails(deliveryMethod, deliveryAddress, deliveryPhone);
+
+        checkMembershipBorrowLimit(borrower, 1);
 
         Loan loan = Loan.builder()
                 .borrower(borrower)
@@ -655,6 +666,30 @@ public class LoanService {
         }
 
         loan.setStatus(newStatus);
+    }
+
+    private void checkMembershipBorrowLimit(User borrower, int requestedQty) {
+        if (borrower.getMembership() != null) {
+            int maxLimit = borrower.getMembership().getMaxBorrowLimit();
+            int currentBorrowed = countActiveBorrowedBooks(borrower);
+            
+            if (currentBorrowed + requestedQty > maxLimit) {
+                throw new BadRequestException("Gói hội viên của bạn chỉ được giữ tối đa " + maxLimit + " cuốn sách cùng lúc. Bạn đang giữ (hoặc chờ duyệt) " + currentBorrowed + " cuốn, không thể mượn thêm " + requestedQty + " cuốn.");
+            }
+        }
+    }
+
+    private int countActiveBorrowedBooks(User borrower) {
+        return loanRepository.findByBorrowerIdOrderByCreatedAtDesc(borrower.getId())
+                .stream()
+                .filter(loan -> loan.getStatus() != LoanStatus.CLOSED
+                        && loan.getStatus() != LoanStatus.CANCELLED
+                        && loan.getStatus() != LoanStatus.EXPIRED)
+                .mapToInt(loan -> loan.getLoanItems().stream()
+                        .filter(item -> !isTerminalItemStatus(item.getStatus()))
+                        .mapToInt(item -> item.getQty() != null ? item.getQty() : 1)
+                        .sum())
+                .sum();
     }
 
     private void closeLoanAsReturned(Loan loan, LocalDateTime returnedAt) {

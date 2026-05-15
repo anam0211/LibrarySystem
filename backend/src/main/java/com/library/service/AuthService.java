@@ -11,9 +11,12 @@ import org.springframework.stereotype.Service;
 import com.library.dto.request.LoginRequest;
 import com.library.dto.request.RegisterRequest;
 import com.library.dto.response.AuthResponse;
+import com.library.entity.Membership;
+import com.library.entity.MembershipType;
 import com.library.entity.Role;
 import com.library.entity.User;
 import com.library.entity.UserStatus;
+import com.library.repository.MembershipRepository;
 import com.library.repository.UserRepository;
 import com.library.security.JwtTokenProvider;
 
@@ -25,13 +28,16 @@ public class AuthService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
+    private final MembershipRepository membershipRepository;
 
     public AuthService(@Lazy AuthenticationManager authenticationManager, UserRepository userRepository,
-                      @Lazy PasswordEncoder passwordEncoder,@Lazy JwtTokenProvider jwtTokenProvider) {
+                      @Lazy PasswordEncoder passwordEncoder,@Lazy JwtTokenProvider jwtTokenProvider,
+                      MembershipRepository membershipRepository) {
         this.authenticationManager = authenticationManager;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenProvider = jwtTokenProvider;
+        this.membershipRepository = membershipRepository;
     }
 
     // Xử lý Đăng ký
@@ -39,6 +45,9 @@ public class AuthService {
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new RuntimeException("Email đã được sử dụng!");
         }
+
+        Membership freePlan = membershipRepository.findByCode(MembershipType.FREE)
+                .orElseThrow(() -> new RuntimeException("Gói FREE chưa được cấu hình trong hệ thống!"));
 
         User user = User.builder()
                 .fullName(request.getFullName())
@@ -48,6 +57,7 @@ public class AuthService {
                 .phone(request.getPhone())
                 .role(Role.READER) // Mặc định ai đăng ký cũng là Độc giả
                 .status(UserStatus.ACTIVE)
+                .membership(freePlan)
                 .build();
 
         userRepository.save(user);

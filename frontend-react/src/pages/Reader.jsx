@@ -40,7 +40,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { normalizeSession, writeSession } from "../api/authStore";
-import { toAbsoluteMediaUrl } from "../api/apiClient";
+import { apiClient, toAbsoluteMediaUrl } from "../api/apiClient";
 import { libraryApi } from "../api/libraryApi";
 import { libraryGateway } from "../api/libraryGateway";
 import BookCard from "../components/BookCard";
@@ -185,6 +185,11 @@ function ReaderHeader({ user, session, unpaidAmount }) {
       </div>
       <Space wrap>
         {kycTag(user?.kycStatus || session?.kycStatus)}
+        {user?.membershipCode === "PREMIUM" ? (
+          <Tag color="gold">Thành viên VIP</Tag>
+        ) : (
+          <Tag color="default">Thành viên cơ bản</Tag>
+        )}
         {unpaidAmount > 0 ? <Tag color="red">Nợ phạt {formatCurrency(unpaidAmount)}</Tag> : null}
         <Link to="/reader/cart">
           <Button type="primary" icon={<ShoppingCartOutlined />}>Mở giỏ mượn</Button>
@@ -391,11 +396,11 @@ export default function Reader({ session }) {
             <Descriptions.Item label="Xác thực">{kycTag(user?.kycStatus)}</Descriptions.Item>
           </Descriptions>
         </Card>
-        <Card className="glass-card reader-mini-card" title="Thẻ thư viện">
+        <Card className="glass-card reader-mini-card" title="Thẻ thư viện" style={user?.membershipCode === "PREMIUM" ? { borderColor: "gold" } : {}}>
           <Space>
-            <QRCode value={buildReaderQrToken(user?.id || session?.id, Date.now())} size={92} bordered={false} />
+            <QRCode value={buildReaderQrToken(user?.id || session?.id, Date.now())} size={92} bordered={false} color={user?.membershipCode === "PREMIUM" ? "gold" : "#000"} />
             <div>
-              <Typography.Text type="secondary">BOOKHUB CARD</Typography.Text>
+              <Typography.Text type="secondary" style={user?.membershipCode === "PREMIUM" ? { color: "gold" } : {}}>BOOKHUB CARD</Typography.Text>
               <Typography.Title level={4} style={{ margin: "4px 0" }}>{cardCode}</Typography.Title>
               <Link to="/reader/card"><Button size="small">Xem thẻ</Button></Link>
             </div>
@@ -669,6 +674,8 @@ export function ReaderCard({ session, onSessionUpdate }) {
   const { user, setUser, loadReader } = useReaderData(session);
   const [kycFileList, setKycFileList] = useState([]);
   const [submittingKyc, setSubmittingKyc] = useState(false);
+  const [upgrading, setUpgrading] = useState(false);
+  const [payUpgradeOpen, setPayUpgradeOpen] = useState(false);
   const [qrIssuedAt, setQrIssuedAt] = useState(() => Date.now());
   const cardCode = user?.cardCode || "Chưa cấp thẻ";
   const readerUserId = user?.id || session?.id;
@@ -723,6 +730,27 @@ export function ReaderCard({ session, onSessionUpdate }) {
     }
   }
 
+  async function handleUpgrade() {
+    setUpgrading(true);
+    try {
+      await apiClient.post(`/memberships/upgrade/${readerUserId}`);
+      
+      message.success("Nâng cấp gói Premium thành công!");
+      setPayUpgradeOpen(false);
+      
+      const nextSession = normalizeSession({ ...session, membershipCode: "PREMIUM" });
+      writeSession(nextSession);
+      onSessionUpdate?.(nextSession);
+      
+      await loadReader();
+    } catch (error) {
+      const errorMsg = error?.response?.data?.message || error?.message || "Lỗi kết nối đến máy chủ khi nâng cấp.";
+      message.error(errorMsg);
+    } finally {
+      setUpgrading(false);
+    }
+  }
+
   return (
     <div className="page-shell reader-dashboard">
       <div className="page-toolbar">
@@ -733,17 +761,19 @@ export function ReaderCard({ session, onSessionUpdate }) {
       </div>
       <Row gutter={[18, 18]}>
         <Col xs={24} lg={9}>
-          <Card className="glass-card reader-library-card">
+          <Card className="glass-card reader-library-card" style={user?.membershipCode === "PREMIUM" ? { background: "linear-gradient(135deg, #232526 0%, #414345 100%)", color: "white", borderColor: "gold" } : {}}>
             <Space direction="vertical" size={14} style={{ width: "100%" }}>
               <Space align="center" style={{ justifyContent: "space-between", width: "100%" }}>
                 <div>
-                  <Typography.Text type="secondary">BOOKHUB CARD</Typography.Text>
-                  <Typography.Title level={3} style={{ margin: 0 }}>{cardCode}</Typography.Title>
+                  <Typography.Text type="secondary" style={user?.membershipCode === "PREMIUM" ? { color: "gold" } : {}}>BOOKHUB CARD</Typography.Text>
+                  <Typography.Title level={3} style={{ margin: 0, color: user?.membershipCode === "PREMIUM" ? "white" : "inherit" }}>{cardCode}</Typography.Title>
                 </div>
-                {kycTag(user?.kycStatus)}
+                {user?.membershipCode === "PREMIUM" ? <Tag color="gold">VIP PREMIUM</Tag> : kycTag(user?.kycStatus)}
               </Space>
-              <QRCode value={buildReaderQrToken(readerUserId, qrIssuedAt)} size={128} bordered={false} />
-              <Typography.Text type="secondary">Làm mới lúc {formatQrTime(qrIssuedAt + READER_QR_TTL_MS)}</Typography.Text>
+              <div style={{ background: user?.membershipCode === "PREMIUM" ? "rgba(255,255,255,0.1)" : "transparent", padding: 8, borderRadius: 8, display: "inline-block" }}>
+                <QRCode value={buildReaderQrToken(readerUserId, qrIssuedAt)} size={128} bordered={false} color={user?.membershipCode === "PREMIUM" ? "gold" : "#000"} bgColor="transparent" />
+              </div>
+              <Typography.Text type="secondary" style={user?.membershipCode === "PREMIUM" ? { color: "#ccc" } : {}}>Làm mới lúc {formatQrTime(qrIssuedAt + READER_QR_TTL_MS)}</Typography.Text>
             </Space>
           </Card>
         </Col>
@@ -756,6 +786,23 @@ export function ReaderCard({ session, onSessionUpdate }) {
               <Descriptions.Item label="Số điện thoại">{user?.phone || "-"}</Descriptions.Item>
               <Descriptions.Item label="Địa chỉ">{user?.address || "-"}</Descriptions.Item>
               <Descriptions.Item label="Trạng thái">{kycTag(user?.kycStatus)}</Descriptions.Item>
+              <Descriptions.Item label="Gói hội viên">
+                {user?.membershipCode === "PREMIUM" ? (
+                  <Space>
+                    <Tag color="gold">VIP Premium</Tag>
+                    <Typography.Text type="secondary">
+                      (Hạn tới: {formatDate(user?.premiumValidUntil)})
+                    </Typography.Text>
+                  </Space>
+                ) : (
+                  <Space>
+                    <Tag>Cơ bản</Tag>
+                    <Button size="small" style={{ background: "gold", borderColor: "gold", color: "black", fontWeight: 500 }} onClick={() => setPayUpgradeOpen(true)}>
+                      Nâng cấp (49k/tháng)
+                    </Button>
+                  </Space>
+                )}
+              </Descriptions.Item>
             </Descriptions>
             {user?.kycStatus !== "VERIFIED" ? (
               <Form form={kycForm} layout="vertical" onFinish={handleSubmitKyc} className="reader-kyc-form">
@@ -782,6 +829,25 @@ export function ReaderCard({ session, onSessionUpdate }) {
           </Card>
         </Col>
       </Row>
+
+      <Modal 
+        open={payUpgradeOpen} 
+        title="Thanh toán nâng cấp Premium" 
+        onCancel={() => setPayUpgradeOpen(false)} 
+        footer={[
+          <Button key="close" onClick={() => setPayUpgradeOpen(false)} disabled={upgrading}>Đóng</Button>,
+          <Button key="paid" type="primary" icon={<BankOutlined />} loading={upgrading} onClick={handleUpgrade}>Đã thanh toán</Button>
+        ]}
+      >
+        <div className="payment-modal-body">
+          <FakeQr label="PREMIUM" />
+          <Space direction="vertical" align="center" style={{ width: "100%", marginTop: 16 }}>
+            <Tag color="blue" icon={<CreditCardOutlined />}>Momo/VNPay</Tag>
+            <Typography.Title level={4} style={{ margin: 0 }}>49.000 ₫</Typography.Title>
+            <Typography.Text type="secondary">Phí duy trì 30 ngày (Gói Premium)</Typography.Text>
+          </Space>
+        </div>
+      </Modal>
     </div>
   );
 }

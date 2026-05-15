@@ -97,24 +97,31 @@ export default function Cart({ session }) {
   const dueDays = Number(Form.useWatch("dueDays", form) || 14);
   const [cart, setCart] = useState([]);
   const [user, setUser] = useState(null);
+  const [currentBorrowed, setCurrentBorrowed] = useState(0);
   const [submitting, setSubmitting] = useState(false);
 
-  const deliveryFee = receiveMethod === "DELIVERY" ? 18000 : 0;
+  const deliveryFee = receiveMethod === "DELIVERY" ? (user?.membershipCode === "PREMIUM" ? 0 : 20000) : 0;
   const depositAmount = 0;
   const totalPayment = deliveryFee + depositAmount;
   const expectedDueDate = useMemo(() => addDays(dueDays), [dueDays]);
-  const canSubmit = Boolean(cart.length);
+
+  const maxBooksAllowed = user?.membershipCode === 'PREMIUM' ? 6 : 3;
+  const availableQuota = Math.max(0, maxBooksAllowed - currentBorrowed);
+  const isOverLimit = cart.length > availableQuota;
+  const canSubmit = Boolean(cart.length) && !isOverLimit;
 
   async function loadCart() {
     if (!session?.id) {
       setCart([]);
       setUser(null);
+      setCurrentBorrowed(0);
       return;
     }
 
-    const [nextCart, nextUser] = await Promise.all([
+    const [nextCart, nextUser, nextLoans] = await Promise.all([
       libraryGateway.getCart(session.id),
-      libraryGateway.getUser(session.id)
+      libraryGateway.getUser(session.id),
+      libraryGateway.listLoans(session.id)
     ]);
 
     const nextPhone = nextUser?.phone || nextUser?.verificationPhone || session.phone || "";
@@ -122,8 +129,12 @@ export default function Cart({ session }) {
     const nextName = nextUser?.fullName || session.fullName || "";
     const savedMethod = form.getFieldValue("receiveMethod");
 
+    const activeLoans = (nextLoans || []).filter((loan) => !["RETURNED", "CANCELLED", "EXPIRED"].includes(loan.status));
+    const borrowedCount = activeLoans.reduce((sum, loan) => sum + (Array.isArray(loan.books) && loan.books.length ? loan.books.length : 1), 0);
+    
     setCart(await attachCartBookCovers(nextCart));
     setUser(nextUser);
+    setCurrentBorrowed(borrowedCount);
     form.setFieldsValue({
       fullName: form.getFieldValue("fullName") || nextName,
       phone: form.getFieldValue("phone") || nextPhone,
@@ -307,7 +318,10 @@ export default function Cart({ session }) {
               <SummaryRow label="Hình thức nhận" value={receiveMethod === "DELIVERY" ? "Giao tận nhà" : "Tại quầy"} />
               <SummaryRow label="Số ngày mượn" value={`${formatNumber(dueDays)} ngày`} />
               <SummaryRow label="Hạn trả dự kiến" value={formatDate(expectedDueDate)} />
-              <SummaryRow label="Phí giao" value={formatCurrency(deliveryFee)} />
+              <SummaryRow 
+                label="Phí giao" 
+                value={receiveMethod === "DELIVERY" && user?.membershipCode === "PREMIUM" ? <Tag color="gold" style={{ margin: 0 }}>Miễn phí</Tag> : formatCurrency(deliveryFee)} 
+              />
               <SummaryRow label="Tiền cọc" value={formatCurrency(depositAmount)} />
               <Divider />
               <SummaryRow label="Tổng thanh toán" value={formatCurrency(totalPayment)} strong />
@@ -315,6 +329,34 @@ export default function Cart({ session }) {
                 <Typography.Text type="secondary" className="cart-summary-note">
                   Phí hiển thị để demo, thư viện sẽ xác nhận khi duyệt đơn.
                 </Typography.Text>
+              ) : null}
+              
+              {isOverLimit ? (
+                <Alert
+                  type="error"
+                  showIcon
+                  message="Vượt giới hạn mượn sách"
+                  description={
+                    <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                      <Typography.Text>
+                        Gói <strong style={{ color: user?.membershipCode === 'PREMIUM' ? 'goldenrod' : 'inherit' }}>{user?.membershipCode === 'PREMIUM' ? 'Premium' : 'Cơ bản'}</strong> cho phép giữ tối đa <strong>{maxBooksAllowed}</strong> cuốn cùng lúc.
+                        <br/>
+                        Bạn đang giữ <strong>{currentBorrowed}</strong> cuốn (đang mượn/chờ duyệt), nên chỉ có thể mượn thêm tối đa <strong>{availableQuota}</strong> cuốn. Vui lòng bỏ bớt sách ra khỏi giỏ!
+                      </Typography.Text>
+                      {user?.membershipCode !== 'PREMIUM' && (
+                        <Link to="/reader/card" style={{ display: "block", marginTop: 4 }}>
+                          <Button size="small" style={{ background: "gold", borderColor: "gold", color: "black", fontWeight: 500 }}>Nâng cấp Premium ngay</Button>
+                        </Link>
+                      )}
+                    </Space>
+                  }
+                  style={{ marginTop: 12, marginBottom: 16 }}
+                />
+              ) : null}
+              {isOverLimit ? (
+                <div style={{ textAlign: "center", marginBottom: 12 }}>
+                  <Typography.Text type="danger" strong>Vượt quá số lượng sách có thể đặt</Typography.Text>
+                </div>
               ) : null}
               <Button
                 type="primary"

@@ -53,6 +53,13 @@ public class UserController {
         userData.put("idCardNumber", user.getIdCardNumber());
         userData.put("idCardImageUrl", user.getIdCardImageUrl());
         
+        // Thêm thông tin Gói hội viên
+        if (user.getMembership() != null) {
+            userData.put("membershipCode", user.getMembership().getCode().name());
+            userData.put("membershipName", user.getMembership().getName());
+        }
+        userData.put("premiumValidUntil", user.getPremiumValidUntil());
+
         // Trả về Role (String)
         userData.put("role", user.getRole().name()); // Thêm .name() nếu Role của bạn là Enum
         
