@@ -26,7 +26,6 @@ import com.library.common.exception.BadRequestException;
 import com.library.common.exception.ResourceNotFoundException;
 import com.library.config.VnpayProperties;
 import com.library.entity.Membership;
-import com.library.entity.MembershipType;
 import com.library.entity.User;
 import com.library.entity.VnpayPayment;
 import com.library.repository.MembershipRepository;
@@ -51,7 +50,7 @@ public class VnpayPaymentService {
     public Map<String, Object> createPremiumPayment(String userEmail, String clientIp, String frontendReturnUrl) {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay nguoi dung."));
-        Membership premiumPlan = membershipRepository.findByCode(MembershipType.PREMIUM)
+        Membership premiumPlan = membershipRepository.findByCode("PREMIUM")
                 .orElseThrow(() -> new BadRequestException("Goi Premium chua duoc cau hinh."));
 
         long amountVnd = resolveAmountVnd(premiumPlan);
@@ -144,7 +143,7 @@ public class VnpayPaymentService {
         payment.setVnpTransactionStatus(transactionStatus);
 
         if ("00".equals(responseCode) && "00".equals(transactionStatus)) {
-            membershipService.upgradeToPremium(payment.getUser().getId());
+            membershipService.subscribeMembership(payment.getUser().getId());
             payment.setStatus("SUCCESS");
             payment.setPaidAt(LocalDateTime.now(VIETNAM_ZONE));
             return PaymentResult.success(txnRef, fromIpn ? "Confirm Success" : "Thanh toan thanh cong.");
@@ -265,6 +264,9 @@ public class VnpayPaymentService {
             return "127.0.0.1";
         }
         String firstIp = clientIp.split(",")[0].trim();
+        if (firstIp.contains(":")) {
+            return "127.0.0.1";
+        }
         return firstIp.isBlank() ? "127.0.0.1" : firstIp;
     }
 

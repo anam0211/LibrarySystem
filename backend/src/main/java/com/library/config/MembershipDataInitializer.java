@@ -10,7 +10,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.library.entity.Membership;
-import com.library.entity.MembershipType;
 import com.library.entity.User;
 import com.library.repository.MembershipRepository;
 import com.library.repository.UserRepository;
@@ -29,7 +28,7 @@ public class MembershipDataInitializer implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         Membership freePlan = upsertPlan(
-                MembershipType.FREE,
+                "FREE",
                 "Goi mien phi",
                 0D,
                 3,
@@ -38,7 +37,7 @@ public class MembershipDataInitializer implements ApplicationRunner {
                 "Muon toi da 3 cuon. Phi giao sach tan nha 20.000d / don.");
 
         upsertPlan(
-                MembershipType.PREMIUM,
+                "PREMIUM",
                 "Goi Premium",
                 49000D,
                 6,
@@ -50,7 +49,7 @@ public class MembershipDataInitializer implements ApplicationRunner {
     }
 
     private Membership upsertPlan(
-            MembershipType code,
+            String code,
             String name,
             Double pricePerMonth,
             Integer maxBorrowLimit,

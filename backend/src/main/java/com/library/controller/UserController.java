@@ -114,7 +114,8 @@ public class UserController {
         userData.put("verificationEmail", firstNonBlank(user.getVerificationEmail(), user.getEmail()));
         userData.put("verificationPhone", firstNonBlank(user.getVerificationPhone(), user.getPhone()));
         userData.put("verificationAddress", user.getVerificationAddress());
-        userData.put("verificationStatus", user.getVerificationStatus() != null ? user.getVerificationStatus().name() : null);
+        userData.put("verificationStatus",
+                user.getVerificationStatus() != null ? user.getVerificationStatus().name() : null);
         userData.put("idCardNumber", user.getIdCardNumber());
         userData.put("idCardImageUrl", user.getIdCardImageUrl());
         userData.put("role", user.getRole() != null ? user.getRole().name() : null);
@@ -123,7 +124,7 @@ public class UserController {
         userData.put("updatedAt", user.getUpdatedAt());
 
         if (user.getMembership() != null) {
-            userData.put("membershipCode", user.getMembership().getCode() != null ? user.getMembership().getCode().name() : user.getMembership().getCode());
+            userData.put("membershipCode", user.getMembership().getCode());
             userData.put("membershipName", user.getMembership().getName());
         } else {
             userData.put("membershipCode", "FREE");
@@ -134,9 +135,8 @@ public class UserController {
         if (user.getRole() != null) {
             userData.put("role", user.getRole().name());
         }
-        
+
         return userData;
-    }
     }
 
     private String firstNonBlank(String... values) {
