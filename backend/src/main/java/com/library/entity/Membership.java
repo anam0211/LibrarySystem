@@ -17,9 +17,8 @@ public class Membership {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     Integer id;
 
-    @Enumerated(EnumType.STRING)
     @Column(unique = true, nullable = false)
-    MembershipType code; // FREE, PREMIUM
+    String code; // "FREE", "PREMIUM", "SUPER_VIP", v.v...
 
     @Column(nullable = false, columnDefinition = "nvarchar(255)")
     String name; // "Gói miễn phí", "Gói Premium"

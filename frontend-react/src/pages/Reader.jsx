@@ -185,8 +185,8 @@ function ReaderHeader({ user, session, unpaidAmount }) {
       </div>
       <Space wrap>
         {kycTag(user?.kycStatus || session?.kycStatus)}
-        {user?.membershipCode === "PREMIUM" ? (
-          <Tag color="gold">Thành viên VIP</Tag>
+        {user?.membershipCode && user?.membershipCode !== "FREE" ? (
+          <Tag color="gold">{user?.membershipName || user?.membershipCode}</Tag>
         ) : (
           <Tag color="default">Thành viên cơ bản</Tag>
         )}
@@ -396,11 +396,11 @@ export default function Reader({ session }) {
             <Descriptions.Item label="Xác thực">{kycTag(user?.kycStatus)}</Descriptions.Item>
           </Descriptions>
         </Card>
-        <Card className="glass-card reader-mini-card" title="Thẻ thư viện" style={user?.membershipCode === "PREMIUM" ? { borderColor: "gold" } : {}}>
+        <Card className="glass-card reader-mini-card" title="Thẻ thư viện" style={user?.membershipCode && user?.membershipCode !== "FREE" ? { borderColor: "gold" } : {}}>
           <Space>
-            <QRCode value={buildReaderQrToken(user?.id || session?.id, Date.now())} size={92} bordered={false} color={user?.membershipCode === "PREMIUM" ? "gold" : "#000"} />
+            <QRCode value={buildReaderQrToken(user?.id || session?.id, Date.now())} size={92} bordered={false} color={user?.membershipCode && user?.membershipCode !== "FREE" ? "gold" : "#000"} />
             <div>
-              <Typography.Text type="secondary" style={user?.membershipCode === "PREMIUM" ? { color: "gold" } : {}}>BOOKHUB CARD</Typography.Text>
+              <Typography.Text type="secondary" style={user?.membershipCode && user?.membershipCode !== "FREE" ? { color: "gold" } : {}}>BOOKHUB CARD</Typography.Text>
               <Typography.Title level={4} style={{ margin: "4px 0" }}>{cardCode}</Typography.Title>
               <Link to="/reader/card"><Button size="small">Xem thẻ</Button></Link>
             </div>
@@ -675,13 +675,19 @@ export function ReaderCard({ session, onSessionUpdate }) {
   const [kycFileList, setKycFileList] = useState([]);
   const [submittingKyc, setSubmittingKyc] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
-  const [payUpgradeOpen, setPayUpgradeOpen] = useState(false);
+  const [paySubscriptionOpen, setPaySubscriptionOpen] = useState(false);
+  const [paymentStep, setPaymentStep] = useState(false);
+  const [upgradePackages, setUpgradePackages] = useState([]);
+  const [selectedPackageId, setSelectedPackageId] = useState(null);
+  const [loadingPackages, setLoadingPackages] = useState(false);
   const [qrIssuedAt, setQrIssuedAt] = useState(() => Date.now());
   const cardCode = user?.cardCode || "Chưa cấp thẻ";
   const readerUserId = user?.id || session?.id;
   const canEditKyc = user?.canEdit !== false && user?.kycStatus !== "VERIFIED";
   const hasExistingKycDocument = Boolean(user?.idCardImageUrl);
   const submitButtonLabel = hasExistingKycDocument || user?.kycStatus === "PENDING" ? "Cập nhật KYC" : "Gửi hồ sơ xác thực";
+  
+  const selectedPackage = upgradePackages.find(p => p.id === selectedPackageId);
 
   useEffect(() => {
     setQrIssuedAt(Date.now());
@@ -730,21 +736,60 @@ export function ReaderCard({ session, onSessionUpdate }) {
     }
   }
 
-  async function handleUpgrade() {
+  async function handleOpenSubscription() {
+    setPaySubscriptionOpen(true);
+    setPaymentStep(false);
+    setLoadingPackages(true);
+    try {
+      const res = await apiClient.get('/memberships');
+      
+      const payload = res.data || res;
+      const items = Array.isArray(payload) ? payload : (payload?.result || []);
+      
+      let premiums = items.filter(m => (m.pricePerMonth || m.price) > 0 || m.code !== 'FREE');
+      
+      // Nếu user đã có gói, chỉ lọc ra những gói đắt tiền hơn gói hiện tại
+      if (user?.membershipCode && user.membershipCode !== "FREE") {
+        const currentPkg = items.find(m => m.code === user.membershipCode);
+        const currentPrice = currentPkg ? (currentPkg.pricePerMonth || currentPkg.price || 0) : 0;
+        premiums = premiums.filter(m => (m.pricePerMonth || m.price || 0) > currentPrice);
+      }
+      
+      if (premiums.length > 0) {
+        setUpgradePackages(premiums);
+        setSelectedPackageId(premiums[0].id);
+      } else {
+        message.info("Bạn đang sử dụng gói hội viên cao cấp nhất!");
+        setPaySubscriptionOpen(false);
+      }
+    } catch (error) {
+      console.error("Lỗi lấy danh sách gói:", error);
+      message.error("Không thể tải danh sách gói hội viên. Vui lòng thử lại!");
+      setPaySubscriptionOpen(false);
+    } finally {
+      setLoadingPackages(false);
+    }
+  }
+
+  async function handleSubscribe() {
     setUpgrading(true);
     try {
-      await apiClient.post(`/memberships/upgrade/${readerUserId}`);
+      await apiClient.post(`/memberships/subscription/${readerUserId}?membershipId=${selectedPackageId || ''}`);
       
-      message.success("Nâng cấp gói Premium thành công!");
-      setPayUpgradeOpen(false);
+      message.success(`Đăng ký ${selectedPackage?.name || "gói hội viên"} thành công!`);
+      setPaySubscriptionOpen(false);
       
-      const nextSession = normalizeSession({ ...session, membershipCode: "PREMIUM" });
+      const nextSession = normalizeSession({
+        ...session,
+        membershipCode: selectedPackage?.code || "PREMIUM",
+        membershipName: selectedPackage?.name || "Gói Premium"
+      });
       writeSession(nextSession);
       onSessionUpdate?.(nextSession);
       
       await loadReader();
     } catch (error) {
-      const errorMsg = error?.response?.data?.message || error?.message || "Lỗi kết nối đến máy chủ khi nâng cấp.";
+      const errorMsg = error?.response?.data?.message || error?.message || "Lỗi kết nối đến máy chủ khi đăng ký.";
       message.error(errorMsg);
     } finally {
       setUpgrading(false);
@@ -761,19 +806,19 @@ export function ReaderCard({ session, onSessionUpdate }) {
       </div>
       <Row gutter={[18, 18]}>
         <Col xs={24} lg={9}>
-          <Card className="glass-card reader-library-card" style={user?.membershipCode === "PREMIUM" ? { background: "linear-gradient(135deg, #232526 0%, #414345 100%)", color: "white", borderColor: "gold" } : {}}>
+          <Card className="glass-card reader-library-card" style={user?.membershipCode && user?.membershipCode !== "FREE" ? { background: "linear-gradient(135deg, #232526 0%, #414345 100%)", color: "white", borderColor: "gold" } : {}}>
             <Space direction="vertical" size={14} style={{ width: "100%" }}>
               <Space align="center" style={{ justifyContent: "space-between", width: "100%" }}>
                 <div>
-                  <Typography.Text type="secondary" style={user?.membershipCode === "PREMIUM" ? { color: "gold" } : {}}>BOOKHUB CARD</Typography.Text>
-                  <Typography.Title level={3} style={{ margin: 0, color: user?.membershipCode === "PREMIUM" ? "white" : "inherit" }}>{cardCode}</Typography.Title>
+                  <Typography.Text type="secondary" style={user?.membershipCode && user?.membershipCode !== "FREE" ? { color: "gold" } : {}}>BOOKHUB CARD</Typography.Text>
+                  <Typography.Title level={3} style={{ margin: 0, color: user?.membershipCode && user?.membershipCode !== "FREE" ? "white" : "inherit" }}>{cardCode}</Typography.Title>
                 </div>
-                {user?.membershipCode === "PREMIUM" ? <Tag color="gold">VIP PREMIUM</Tag> : kycTag(user?.kycStatus)}
+                {user?.membershipCode && user?.membershipCode !== "FREE" ? <Tag color="gold" style={{ textTransform: 'uppercase' }}>{user?.membershipName || user?.membershipCode}</Tag> : kycTag(user?.kycStatus)}
               </Space>
-              <div style={{ background: user?.membershipCode === "PREMIUM" ? "rgba(255,255,255,0.1)" : "transparent", padding: 8, borderRadius: 8, display: "inline-block" }}>
-                <QRCode value={buildReaderQrToken(readerUserId, qrIssuedAt)} size={128} bordered={false} color={user?.membershipCode === "PREMIUM" ? "gold" : "#000"} bgColor="transparent" />
+              <div style={{ background: user?.membershipCode && user?.membershipCode !== "FREE" ? "rgba(255,255,255,0.1)" : "transparent", padding: 8, borderRadius: 8, display: "inline-block" }}>
+                <QRCode value={buildReaderQrToken(readerUserId, qrIssuedAt)} size={128} bordered={false} color={user?.membershipCode && user?.membershipCode !== "FREE" ? "gold" : "#000"} bgColor="transparent" />
               </div>
-              <Typography.Text type="secondary" style={user?.membershipCode === "PREMIUM" ? { color: "#ccc" } : {}}>Làm mới lúc {formatQrTime(qrIssuedAt + READER_QR_TTL_MS)}</Typography.Text>
+              <Typography.Text type="secondary" style={user?.membershipCode && user?.membershipCode !== "FREE" ? { color: "#ccc" } : {}}>Làm mới lúc {formatQrTime(qrIssuedAt + READER_QR_TTL_MS)}</Typography.Text>
             </Space>
           </Card>
         </Col>
@@ -787,18 +832,21 @@ export function ReaderCard({ session, onSessionUpdate }) {
               <Descriptions.Item label="Địa chỉ">{user?.address || "-"}</Descriptions.Item>
               <Descriptions.Item label="Trạng thái">{kycTag(user?.kycStatus)}</Descriptions.Item>
               <Descriptions.Item label="Gói hội viên">
-                {user?.membershipCode === "PREMIUM" ? (
+                {user?.membershipCode && user?.membershipCode !== "FREE" ? (
                   <Space>
-                    <Tag color="gold">VIP Premium</Tag>
+                    <Tag color="gold">{user?.membershipName || user?.membershipCode}</Tag>
                     <Typography.Text type="secondary">
                       (Hạn tới: {formatDate(user?.premiumValidUntil)})
                     </Typography.Text>
+                    <Button size="small" style={{ background: "gold", borderColor: "gold", color: "black", fontWeight: 500 }} onClick={handleOpenSubscription}>
+                      Nâng cấp
+                    </Button>
                   </Space>
                 ) : (
                   <Space>
                     <Tag>Cơ bản</Tag>
-                    <Button size="small" style={{ background: "gold", borderColor: "gold", color: "black", fontWeight: 500 }} onClick={() => setPayUpgradeOpen(true)}>
-                      Nâng cấp (49k/tháng)
+                    <Button size="small" style={{ background: "gold", borderColor: "gold", color: "black", fontWeight: 500 }} onClick={handleOpenSubscription}>
+                      Đăng ký
                     </Button>
                   </Space>
                 )}
@@ -831,22 +879,72 @@ export function ReaderCard({ session, onSessionUpdate }) {
       </Row>
 
       <Modal 
-        open={payUpgradeOpen} 
-        title="Thanh toán nâng cấp Premium" 
-        onCancel={() => setPayUpgradeOpen(false)} 
-        footer={[
-          <Button key="close" onClick={() => setPayUpgradeOpen(false)} disabled={upgrading}>Đóng</Button>,
-          <Button key="paid" type="primary" icon={<BankOutlined />} loading={upgrading} onClick={handleUpgrade}>Đã thanh toán</Button>
-        ]}
+        open={paySubscriptionOpen} 
+        title={paymentStep ? "Thanh toán đăng ký" : "Chọn gói hội viên"} 
+        onCancel={() => setPaySubscriptionOpen(false)} 
+        footer={
+          paymentStep ? [
+            <Button key="back" onClick={() => setPaymentStep(false)} disabled={upgrading}>Quay lại</Button>,
+            <Button key="paid" type="primary" icon={<BankOutlined />} loading={upgrading} onClick={handleSubscribe}>Đã thanh toán</Button>
+          ] : [
+            <Button key="close" onClick={() => setPaySubscriptionOpen(false)}>Đóng</Button>,
+            <Button key="confirm" type="primary" onClick={() => setPaymentStep(true)} disabled={!selectedPackageId || loadingPackages}>Xác nhận</Button>
+          ]
+        }
       >
-        <div className="payment-modal-body">
-          <FakeQr label="PREMIUM" />
-          <Space direction="vertical" align="center" style={{ width: "100%", marginTop: 16 }}>
-            <Tag color="blue" icon={<CreditCardOutlined />}>Momo/VNPay</Tag>
-            <Typography.Title level={4} style={{ margin: 0 }}>49.000 ₫</Typography.Title>
-            <Typography.Text type="secondary">Phí duy trì 30 ngày (Gói Premium)</Typography.Text>
-          </Space>
-        </div>
+        {!paymentStep ? (
+          <div className="package-selection-body" style={{ paddingTop: 8 }}>
+            <List
+              loading={loadingPackages}
+              dataSource={upgradePackages}
+              renderItem={(pkg) => (
+                <List.Item
+                  onClick={() => setSelectedPackageId(pkg.id)}
+                  style={{
+                    cursor: 'pointer',
+                    border: selectedPackageId === pkg.id ? '2px solid #1677ff' : '1px solid #d9d9d9',
+                    borderRadius: 8,
+                    padding: '12px 16px',
+                    marginBottom: 12,
+                    background: selectedPackageId === pkg.id ? '#e6f4ff' : 'transparent',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <List.Item.Meta
+                    title={<Space size={8}>{pkg.name || pkg.code} {selectedPackageId === pkg.id && <CheckCircleOutlined style={{ color: '#1677ff' }} />}</Space>}
+                    description={`Mượn tối đa ${pkg.maxBorrowLimit || 3} cuốn`}
+                  />
+                  <div style={{ textAlign: 'right' }}>
+                    <strong style={{ fontSize: 16, color: '#1677ff' }}>{formatCurrency(pkg.pricePerMonth || pkg.price || 49000)}</strong>
+                    <div style={{ fontSize: 12, color: '#888' }}>/ tháng</div>
+                  </div>
+                </List.Item>
+              )}
+            />
+            {selectedPackage && (
+              <div style={{ marginTop: 8, padding: '12px 16px', background: '#f5f5f5', borderRadius: 8, border: '1px solid #e8e8e8' }}>
+                <Typography.Text strong style={{ display: 'block', marginBottom: 8, color: '#1677ff' }}>Chi tiết quyền lợi:</Typography.Text>
+                <ul style={{ margin: 0, paddingLeft: 20, lineHeight: '1.8' }}>
+                  <li>Được mượn tối đa: <strong>{selectedPackage.maxBorrowLimit || 3} cuốn</strong> cùng lúc</li>
+                  <li>Phí giao hàng: <strong>{selectedPackage.deliveryFee === 0 ? "Miễn phí" : formatCurrency(selectedPackage.deliveryFee || 20000)}</strong></li>
+                  <li>Ưu tiên xử lý đơn: <strong>{selectedPackage.priorityProcessing ? "Có" : "Không"}</strong></li>
+                  {selectedPackage.benefitsDescription && (
+                    <li>{selectedPackage.benefitsDescription}</li>
+                  )}
+                </ul>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="payment-modal-body">
+            <FakeQr label={selectedPackage?.code || "PREMIUM"} />
+            <Space direction="vertical" align="center" style={{ width: "100%", marginTop: 16 }}>
+              <Tag color="blue" icon={<CreditCardOutlined />}>Momo/VNPay</Tag>
+              <Typography.Title level={4} style={{ margin: 0 }}>{formatCurrency(selectedPackage?.pricePerMonth || selectedPackage?.price || 49000)}</Typography.Title>
+              <Typography.Text type="secondary">{selectedPackage?.name || 'Phí duy trì gói hội viên (30 ngày)'}</Typography.Text>
+            </Space>
+          </div>
+        )}
       </Modal>
     </div>
   );

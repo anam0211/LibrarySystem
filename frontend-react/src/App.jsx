@@ -23,6 +23,7 @@ import Publishers from "./pages/Publishers";
 import Reader, { ReaderCard, ReaderFavorites, ReaderFines, ReaderOrders, ReaderReturns } from "./pages/Reader";
 import Notifications from "./pages/Notifications";
 import Users from "./pages/Users";
+import AdminMemberships from "./pages/AdminMemberships";
 
 function ScrollToTop() {
   const { pathname, search } = useLocation();
@@ -230,6 +231,14 @@ export default function App() {
                 <Media />
               </ProtectedRoute>
             }
+          />
+          <Route 
+            path="/admin/memberships" 
+            element={
+              <ProtectedRoute session={session} roles={["ADMIN"]}>
+                <AdminMemberships />
+              </ProtectedRoute>
+            } 
           />
           <Route
             path="/users"

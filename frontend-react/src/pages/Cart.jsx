@@ -25,7 +25,7 @@ import {
 } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { toAbsoluteMediaUrl } from "../api/apiClient";
+import { apiClient, toAbsoluteMediaUrl } from "../api/apiClient";
 import { libraryGateway } from "../api/libraryGateway";
 import { formatCurrency, formatDate, formatNumber } from "../components/formatters";
 
@@ -97,15 +97,17 @@ export default function Cart({ session }) {
   const dueDays = Number(Form.useWatch("dueDays", form) || 14);
   const [cart, setCart] = useState([]);
   const [user, setUser] = useState(null);
+  const [userMembership, setUserMembership] = useState(null);
+  const [hasHigherTier, setHasHigherTier] = useState(false);
   const [currentBorrowed, setCurrentBorrowed] = useState(0);
   const [submitting, setSubmitting] = useState(false);
 
-  const deliveryFee = receiveMethod === "DELIVERY" ? (user?.membershipCode === "PREMIUM" ? 0 : 20000) : 0;
+  const deliveryFee = receiveMethod === "DELIVERY" ? (userMembership?.deliveryFee ?? (user?.membershipCode && user?.membershipCode !== "FREE" ? 0 : 20000)) : 0;
   const depositAmount = 0;
   const totalPayment = deliveryFee + depositAmount;
   const expectedDueDate = useMemo(() => addDays(dueDays), [dueDays]);
 
-  const maxBooksAllowed = user?.membershipCode === 'PREMIUM' ? 6 : 3;
+  const maxBooksAllowed = userMembership?.maxBorrowLimit ?? (user?.membershipCode && user?.membershipCode !== "FREE" ? 6 : 3);
   const availableQuota = Math.max(0, maxBooksAllowed - currentBorrowed);
   const isOverLimit = cart.length > availableQuota;
   const canSubmit = Boolean(cart.length) && !isOverLimit;
@@ -118,11 +120,20 @@ export default function Cart({ session }) {
       return;
     }
 
-    const [nextCart, nextUser, nextLoans] = await Promise.all([
+    const [nextCart, nextUser, nextLoans, membershipsRes] = await Promise.all([
       libraryGateway.getCart(session.id),
       libraryGateway.getUser(session.id),
-      libraryGateway.listLoans(session.id)
+      libraryGateway.listLoans(session.id),
+      apiClient.get('/memberships').catch(() => ({ data: [] }))
     ]);
+
+    const payload = membershipsRes.data || membershipsRes;
+    const memberships = Array.isArray(payload) ? payload : (payload?.result || []);
+    const currentMembership = memberships.find(m => m.code === nextUser?.membershipCode);
+    setUserMembership(currentMembership || null);
+    
+    const currentPrice = currentMembership?.pricePerMonth || currentMembership?.price || 0;
+    setHasHigherTier(memberships.some(m => (m.pricePerMonth || m.price || 0) > currentPrice));
 
     const nextPhone = nextUser?.phone || nextUser?.verificationPhone || session.phone || "";
     const nextAddress = nextUser?.address || nextUser?.verificationAddress || "";
@@ -320,7 +331,7 @@ export default function Cart({ session }) {
               <SummaryRow label="Hạn trả dự kiến" value={formatDate(expectedDueDate)} />
               <SummaryRow 
                 label="Phí giao" 
-                value={receiveMethod === "DELIVERY" && user?.membershipCode === "PREMIUM" ? <Tag color="gold" style={{ margin: 0 }}>Miễn phí</Tag> : formatCurrency(deliveryFee)} 
+                value={receiveMethod === "DELIVERY" && deliveryFee === 0 ? <Tag color="gold" style={{ margin: 0 }}>Miễn phí</Tag> : formatCurrency(deliveryFee)} 
               />
               <SummaryRow label="Tiền cọc" value={formatCurrency(depositAmount)} />
               <Divider />
@@ -339,15 +350,19 @@ export default function Cart({ session }) {
                   description={
                     <Space direction="vertical" size={4} style={{ width: "100%" }}>
                       <Typography.Text>
-                        Gói <strong style={{ color: user?.membershipCode === 'PREMIUM' ? 'goldenrod' : 'inherit' }}>{user?.membershipCode === 'PREMIUM' ? 'Premium' : 'Cơ bản'}</strong> cho phép giữ tối đa <strong>{maxBooksAllowed}</strong> cuốn cùng lúc.
+                         <strong style={{ color: user?.membershipCode && user?.membershipCode !== 'FREE' ? 'goldenrod' : 'inherit', textTransform: 'uppercase' }}>{userMembership?.name || user?.membershipName || 'Gói Cơ bản'}</strong> cho phép giữ tối đa <strong>{maxBooksAllowed}</strong> cuốn cùng lúc.
                         <br/>
                         Bạn đang giữ <strong>{currentBorrowed}</strong> cuốn (đang mượn/chờ duyệt), nên chỉ có thể mượn thêm tối đa <strong>{availableQuota}</strong> cuốn. Vui lòng bỏ bớt sách ra khỏi giỏ!
                       </Typography.Text>
-                      {user?.membershipCode !== 'PREMIUM' && (
+                      {(!user?.membershipCode || user?.membershipCode === 'FREE') ? (
                         <Link to="/reader/card" style={{ display: "block", marginTop: 4 }}>
-                          <Button size="small" style={{ background: "gold", borderColor: "gold", color: "black", fontWeight: 500 }}>Nâng cấp Premium ngay</Button>
+                          <Button size="small" style={{ background: "gold", borderColor: "gold", color: "black", fontWeight: 500 }}>Đăng ký Hội viên ngay</Button>
                         </Link>
-                      )}
+                      ) : hasHigherTier ? (
+                        <Link to="/reader/card" style={{ display: "block", marginTop: 4 }}>
+                          <Button size="small" style={{ background: "gold", borderColor: "gold", color: "black", fontWeight: 500 }}>Nâng cấp gói hội viên</Button>
+                        </Link>
+                      ) : null}
                     </Space>
                   }
                   style={{ marginTop: 12, marginBottom: 16 }}

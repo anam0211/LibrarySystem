@@ -1,7 +1,6 @@
 package com.library.service;
 
 import com.library.entity.Membership;
-import com.library.entity.MembershipType;
 import com.library.entity.User;
 import com.library.repository.MembershipRepository;
 import com.library.repository.UserRepository;
@@ -22,15 +21,65 @@ public class MembershipService {
     private final UserRepository userRepository;
     private final MembershipRepository membershipRepository;
 
+    public List<Membership> getAllMemberships() {
+        return membershipRepository.findAll();
+    }
+
     @Transactional
-    public User upgradeToPremium(Integer userId) {
+    public Membership createMembership(Membership request) {
+        if (membershipRepository.findByCode(request.getCode()).isPresent()) {
+            throw new RuntimeException("Mã gói hội viên đã tồn tại!");
+        }
+        return membershipRepository.save(request);
+    }
+
+    @Transactional
+    public Membership updateMembership(Integer id, Membership request) {
+        Membership existing = membershipRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy gói hội viên!"));
+        
+        if (!existing.getCode().equals(request.getCode()) && membershipRepository.findByCode(request.getCode()).isPresent()) {
+            throw new RuntimeException("Mã gói hội viên mới đã bị trùng với một gói khác!");
+        }
+
+        existing.setCode(request.getCode());
+        existing.setName(request.getName());
+        existing.setPricePerMonth(request.getPricePerMonth());
+        existing.setMaxBorrowLimit(request.getMaxBorrowLimit());
+        existing.setDeliveryFee(request.getDeliveryFee());
+        existing.setPriorityProcessing(request.getPriorityProcessing());
+        existing.setBenefitsDescription(request.getBenefitsDescription());
+
+        return membershipRepository.save(existing);
+    }
+
+    @Transactional
+    public void deleteMembership(Integer id) {
+        Membership existing = membershipRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy gói hội viên!"));
+        membershipRepository.delete(existing);
+    }
+
+    @Transactional
+    public User subscribeMembership(Integer userId) {
+        return subscribeMembership(userId, null);
+    }
+
+    @Transactional
+    public User subscribeMembership(Integer userId, Integer membershipId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng"));
 
-        Membership premiumPlan = membershipRepository.findByCode(MembershipType.PREMIUM)
-                .orElseThrow(() -> new RuntimeException("Gói Premium chưa được cấu hình"));
+        Membership targetPlan;
+        if (membershipId != null) {
+            targetPlan = membershipRepository.findById(membershipId)
+                    .orElseThrow(() -> new RuntimeException("Gói hội viên không tồn tại"));
+        } else {
+            targetPlan = membershipRepository.findByCode("PREMIUM")
+                    .orElseThrow(() -> new RuntimeException("Gói Premium mặc định chưa được cấu hình"));
+        }
 
-        user.setMembership(premiumPlan);
+        user.setMembership(targetPlan);
         
         // Gia hạn thêm 30 ngày từ hôm nay (hoặc cộng dồn nếu đang còn hạn)
         if (user.getPremiumValidUntil() != null && user.getPremiumValidUntil().isAfter(LocalDate.now())) {
@@ -45,11 +94,10 @@ public class MembershipService {
     @Scheduled(cron = "0 0 0 * * ?") // Tự động chạy ngầm vào 00:00 mỗi ngày
     @Transactional
     public void downgradeExpiredPremiumUsers() {
-        List<User> expiredUsers = userRepository.findByMembership_CodeAndPremiumValidUntilBefore(
-                MembershipType.PREMIUM, LocalDate.now());
+        List<User> expiredUsers = userRepository.findByPremiumValidUntilBefore(LocalDate.now());
         
         if (!expiredUsers.isEmpty()) {
-            Membership freePlan = membershipRepository.findByCode(MembershipType.FREE)
+            Membership freePlan = membershipRepository.findByCode("FREE")
                     .orElseThrow(() -> new RuntimeException("Gói Free chưa được cấu hình"));
             
             for (User user : expiredUsers) {

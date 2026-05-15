@@ -55,7 +55,7 @@ public class UserController {
         
         // Thêm thông tin Gói hội viên
         if (user.getMembership() != null) {
-            userData.put("membershipCode", user.getMembership().getCode().name());
+            userData.put("membershipCode", user.getMembership().getCode());
             userData.put("membershipName", user.getMembership().getName());
         }
         userData.put("premiumValidUntil", user.getPremiumValidUntil());
@@ -68,8 +68,39 @@ public class UserController {
 
     @GetMapping
     public ResponseEntity<?> getAllUsers() {
-        // Lấy toàn bộ dữ liệu trong bảng users (SELECT * FROM users)
-        return ResponseEntity.ok(userRepository.findAll());
+        // Tránh trả về trực tiếp Entity User để không bị lỗi Infinite Recursion (Vòng lặp vô hạn) của Jackson
+        List<User> users = userRepository.findAll();
+        List<java.util.Map<String, Object>> result = new java.util.ArrayList<>();
+        
+        for (User user : users) {
+            java.util.Map<String, Object> userData = new java.util.HashMap<>();
+            userData.put("id", user.getId());
+            userData.put("fullName", user.getFullName());
+            userData.put("email", user.getEmail());
+            userData.put("phone", user.getPhone());
+            
+            if (user.getRole() != null) userData.put("role", user.getRole().name());
+            if (user.getStatus() != null) userData.put("status", user.getStatus().name());
+            if (user.getVerificationStatus() != null) {
+                userData.put("verificationStatus", user.getVerificationStatus().name());
+            }
+            
+            if (user.getMembership() != null) {
+                userData.put("membershipCode", user.getMembership().getCode());
+                userData.put("membershipName", user.getMembership().getName());
+            }
+            userData.put("premiumValidUntil", user.getPremiumValidUntil());
+            
+            // Sử dụng Reflection để lấy createdAt an toàn tránh lỗi biên dịch nếu User.java không có hàm này
+            try {
+                userData.put("createdAt", user.getClass().getMethod("getCreatedAt").invoke(user));
+            } catch (Exception e) {
+                // Bỏ qua nếu không có
+            }
+            
+            result.add(userData);
+        }
+        return ResponseEntity.ok(result);
     }
 
     @DeleteMapping("/{id}")

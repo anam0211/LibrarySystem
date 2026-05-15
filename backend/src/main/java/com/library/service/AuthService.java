@@ -12,7 +12,6 @@ import com.library.dto.request.LoginRequest;
 import com.library.dto.request.RegisterRequest;
 import com.library.dto.response.AuthResponse;
 import com.library.entity.Membership;
-import com.library.entity.MembershipType;
 import com.library.entity.Role;
 import com.library.entity.User;
 import com.library.entity.UserStatus;
@@ -46,7 +45,7 @@ public class AuthService {
             throw new RuntimeException("Email đã được sử dụng!");
         }
 
-        Membership freePlan = membershipRepository.findByCode(MembershipType.FREE)
+        Membership freePlan = membershipRepository.findByCode("FREE")
                 .orElseThrow(() -> new RuntimeException("Gói FREE chưa được cấu hình trong hệ thống!"));
 
         User user = User.builder()

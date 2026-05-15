@@ -77,6 +77,9 @@ export default function Dashboard() {
             <Link to="/media">
               <Button type="primary">Media</Button>
             </Link>
+            <Link to="/admin/memberships">
+              <Button>Gói hội viên</Button>
+            </Link>
           </Space>
         }
       />
@@ -134,6 +137,9 @@ export default function Dashboard() {
               </Link>
               <Link to="/media">
                 <Button block>Media</Button>
+              </Link>
+              <Link to="/admin/memberships">
+                <Button block>Gói hội viên</Button>
               </Link>
               <Tag icon={<CheckCircleOutlined />} color="green">Khu vực này dành riêng cho quản trị viên</Tag>
             </Space>
