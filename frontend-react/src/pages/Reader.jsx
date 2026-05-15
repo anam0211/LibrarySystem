@@ -40,7 +40,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { normalizeSession, writeSession } from "../api/authStore";
-import { apiClient, toAbsoluteMediaUrl } from "../api/apiClient";
+import { toAbsoluteMediaUrl } from "../api/apiClient";
 import { libraryApi } from "../api/libraryApi";
 import { libraryGateway } from "../api/libraryGateway";
 import BookCard from "../components/BookCard";
@@ -166,6 +166,7 @@ function useReaderData(session) {
     setLoans(nextLoans);
     setFines(nextFines);
     setWishlist(await attachFavoriteBookCovers(nextWishlist));
+    return nextUser;
   }
 
   useEffect(() => {
@@ -672,6 +673,8 @@ export function ReaderFavorites({ session }) {
 export function ReaderCard({ session, onSessionUpdate }) {
   const [kycForm] = Form.useForm();
   const { user, setUser, loadReader } = useReaderData(session);
+  const location = useLocation();
+  const navigate = useNavigate();
   const [kycFileList, setKycFileList] = useState([]);
   const [submittingKyc, setSubmittingKyc] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
@@ -703,6 +706,36 @@ export function ReaderCard({ session, onSessionUpdate }) {
       idCardNumber: user?.idCardNumber || ""
     });
   }, [kycForm, session?.email, session?.phone, user]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const paymentStatus = params.get("vnpay");
+    if (!paymentStatus) {
+      return;
+    }
+
+    async function refreshAfterPayment() {
+      if (paymentStatus === "success") {
+        message.success("Thanh toán VNPay thành công. Gói Premium đã được kích hoạt.");
+        const nextUser = await loadReader();
+        if (nextUser) {
+          const nextSession = normalizeSession({
+            ...session,
+            membershipCode: nextUser.membershipCode,
+            membershipName: nextUser.membershipName,
+            premiumValidUntil: nextUser.premiumValidUntil
+          });
+          writeSession(nextSession);
+          onSessionUpdate?.(nextSession);
+        }
+      } else {
+        message.error(params.get("message") || "Thanh toán VNPay chưa thành công.");
+      }
+      navigate(location.pathname, { replace: true });
+    }
+
+    refreshAfterPayment();
+  }, [location.search]);
 
   async function handleSubmitKyc(values) {
     const selectedFile = kycFileList[0]?.originFileObj || null;
@@ -774,7 +807,12 @@ export function ReaderCard({ session, onSessionUpdate }) {
   async function handleSubscribe() {
     setUpgrading(true);
     try {
-      await apiClient.post(`/memberships/subscription/${readerUserId}?membershipId=${selectedPackageId || ''}`);
+      const payment = await libraryApi.payments.createPremiumVnpay(selectedPackageId);
+      if (!payment?.paymentUrl) {
+        throw new Error("Không nhận được liên kết thanh toán VNPay.");
+      }
+      window.location.assign(payment.paymentUrl);
+      return;
       
       message.success(`Đăng ký ${selectedPackage?.name || "gói hội viên"} thành công!`);
       setPaySubscriptionOpen(false);
@@ -782,7 +820,8 @@ export function ReaderCard({ session, onSessionUpdate }) {
       const nextSession = normalizeSession({
         ...session,
         membershipCode: selectedPackage?.code || "PREMIUM",
-        membershipName: selectedPackage?.name || "Gói Premium"
+        membershipName: selectedPackage?.name || "Gói Premium",
+        premiumValidUntil: session?.premiumValidUntil
       });
       writeSession(nextSession);
       onSessionUpdate?.(nextSession);

@@ -138,5 +138,8 @@ export const libraryApi = {
     list: (userId) => apiClient.get(`/notifications/user/${userId}`),
     unread: (userId) => apiClient.get(`/notifications/user/${userId}/unread`),
     markAsRead: (id) => apiClient.put(`/notifications/${id}/read`, {})
+  },
+  payments: {
+    createPremiumVnpay: () => apiClient.post("/payments/vnpay/memberships/premium", {})
   }
 };

@@ -243,7 +243,7 @@ export default function App() {
           <Route
             path="/users"
             element={
-              <ProtectedRoute session={session} roles={["ADMIN", "LIBRARIAN"]}>
+              <ProtectedRoute session={session} roles={["ADMIN"]}>
                 <Users />
               </ProtectedRoute>
             }

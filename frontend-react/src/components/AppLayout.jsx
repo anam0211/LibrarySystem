@@ -32,7 +32,7 @@ const MENU_ITEMS = [
   { key: "/admin/memberships", label: "Gói hội viên", icon: <CrownOutlined />, roles: ["ADMIN"] },
   { key: "/loans/pickup", label: "Đến lấy", icon: <ShopOutlined />, roles: ["LIBRARIAN"] },
   { key: "/loans/delivery", label: "Giao tận nhà", icon: <TruckOutlined />, roles: ["LIBRARIAN"] },
-  { key: "/users", label: "Người dùng", icon: <UserOutlined />, roles: ["ADMIN", "LIBRARIAN"] },
+  { key: "/users", label: "Người dùng", icon: <UserOutlined />, roles: ["ADMIN"] },
   { key: "/admin/kyc", label: "Duyệt KYC", icon: <IdcardOutlined />, roles: ["LIBRARIAN"] },
   { key: "/admin/reviews", label: "Review", icon: <MessageOutlined />, roles: ["LIBRARIAN"] },
   { key: "/admin/fines", label: "Thu phạt", icon: <WalletOutlined />, roles: ["LIBRARIAN"] },

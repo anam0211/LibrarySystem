@@ -436,7 +436,10 @@ export const libraryGateway = {
           role: me?.role || authResponse?.role || "READER",
           phone: me?.phone || authResponse?.phone || "",
           studentCode: me?.studentCode || authResponse?.studentCode || "",
-          kycStatus: normalizeKycStatus(me?.kycStatus || me?.verificationStatus || authResponse?.kycStatus)
+          kycStatus: normalizeKycStatus(me?.kycStatus || me?.verificationStatus || authResponse?.kycStatus),
+          membershipCode: me?.membershipCode || authResponse?.membershipCode || "FREE",
+          membershipName: me?.membershipName || authResponse?.membershipName || "",
+          premiumValidUntil: me?.premiumValidUntil || authResponse?.premiumValidUntil || null
         };
       }
     );
