@@ -10,7 +10,10 @@ export function normalizeSession(payload) {
     role: payload?.role || "READER",
     phone: payload?.phone || "",
     studentCode: payload?.studentCode || "",
-    kycStatus: payload?.kycStatus || "NEW"
+    kycStatus: payload?.kycStatus || "NEW",
+    membershipCode: payload?.membershipCode || "FREE",
+    membershipName: payload?.membershipName || "",
+    premiumValidUntil: payload?.premiumValidUntil || null
   };
 }
 

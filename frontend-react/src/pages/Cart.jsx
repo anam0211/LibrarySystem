@@ -110,7 +110,8 @@ export default function Cart({ session }) {
   const maxBooksAllowed = userMembership?.maxBorrowLimit ?? (user?.membershipCode && user?.membershipCode !== "FREE" ? 6 : 3);
   const availableQuota = Math.max(0, maxBooksAllowed - currentBorrowed);
   const isOverLimit = cart.length > availableQuota;
-  const canSubmit = Boolean(cart.length) && !isOverLimit;
+  const isVerified = ["VERIFIED"].includes(user?.kycStatus || user?.verificationStatus || session?.kycStatus || session?.verificationStatus);
+  const canSubmit = Boolean(cart.length) && !isOverLimit && isVerified;
 
   async function loadCart() {
     if (!session?.id) {
@@ -311,14 +312,9 @@ export default function Cart({ session }) {
               )}
 
               <Row gutter={[12, 0]}>
-                <Col xs={24} md={10}>
+                <Col xs={24}>
                   <Form.Item name="dueDays" label="Số ngày mượn">
                     <Select options={BORROW_DAY_OPTIONS} />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} md={14}>
-                  <Form.Item name="note" label="Ghi chú">
-                    <Input.TextArea rows={2} placeholder="Ghi chú ngắn cho thư viện nếu cần" />
                   </Form.Item>
                 </Col>
               </Row>
@@ -372,6 +368,20 @@ export default function Cart({ session }) {
                 <div style={{ textAlign: "center", marginBottom: 12 }}>
                   <Typography.Text type="danger" strong>Vượt quá số lượng sách có thể đặt</Typography.Text>
                 </div>
+              ) : null}
+              {!isVerified && !isOverLimit && cart.length > 0 ? (
+                <Alert
+                  type="warning"
+                  showIcon
+                  message="Tài khoản chưa xác thực"
+                  description="Bạn cần xác thực tài khoản (CCCD/Thẻ sinh viên) để có thể mượn sách trực tuyến."
+                  action={
+                    <Link to="/reader/kyc">
+                      <Button size="small" type="primary">Xác thực ngay</Button>
+                    </Link>
+                  }
+                  style={{ marginBottom: 16 }}
+                />
               ) : null}
               <Button
                 type="primary"

@@ -61,6 +61,11 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/", "/error").permitAll()
                         .requestMatchers("/api/auth/**", "/api/public/**").permitAll()
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/payments/vnpay/return",
+                                "/api/payments/vnpay/ipn").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/payments/vnpay/memberships/premium").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/memberships/upgrade/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/books").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PUT, "/api/books/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/books/**").hasRole("ADMIN")
@@ -76,9 +81,10 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/media").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/media/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/media/**").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.GET, "/api/users").hasAnyRole("ADMIN", "LIBRARIAN")
-                        .requestMatchers(HttpMethod.PUT, "/api/users/**").hasAnyRole("ADMIN", "LIBRARIAN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/users/**").hasAnyRole("ADMIN", "LIBRARIAN")
+                        .requestMatchers(HttpMethod.GET, "/api/users/me").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/users").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.PUT, "/api/users/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/users/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/reviews").hasAnyRole("ADMIN", "LIBRARIAN")
                         .requestMatchers(HttpMethod.PUT, "/api/reviews/**").hasRole("LIBRARIAN")
                         .requestMatchers(HttpMethod.GET, "/api/fines").hasAnyRole("ADMIN", "LIBRARIAN")

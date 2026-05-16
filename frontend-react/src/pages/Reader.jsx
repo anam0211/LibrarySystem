@@ -40,7 +40,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { normalizeSession, writeSession } from "../api/authStore";
-import { apiClient, toAbsoluteMediaUrl } from "../api/apiClient";
+import { toAbsoluteMediaUrl, apiClient } from "../api/apiClient";
 import { libraryApi } from "../api/libraryApi";
 import { libraryGateway } from "../api/libraryGateway";
 import BookCard from "../components/BookCard";
@@ -166,6 +166,7 @@ function useReaderData(session) {
     setLoans(nextLoans);
     setFines(nextFines);
     setWishlist(await attachFavoriteBookCovers(nextWishlist));
+    return nextUser;
   }
 
   useEffect(() => {
@@ -675,6 +676,8 @@ export function ReaderCard({ session, onSessionUpdate }) {
   const [kycForm] = Form.useForm();
   const [autoOpened, setAutoOpened] = useState(false);
   const { user, setUser, loadReader } = useReaderData(session);
+  const location = useLocation();
+  const navigate = useNavigate();
   const [kycFileList, setKycFileList] = useState([]);
   const [submittingKyc, setSubmittingKyc] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
@@ -719,6 +722,36 @@ export function ReaderCard({ session, onSessionUpdate }) {
       idCardNumber: user?.idCardNumber || ""
     });
   }, [kycForm, session?.email, session?.phone, user]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const paymentStatus = params.get("vnpay");
+    if (!paymentStatus) {
+      return;
+    }
+
+    async function refreshAfterPayment() {
+      if (paymentStatus === "success") {
+        message.success("Thanh toán VNPay thành công. Gói Premium đã được kích hoạt.");
+        const nextUser = await loadReader();
+        if (nextUser) {
+          const nextSession = normalizeSession({
+            ...session,
+            membershipCode: nextUser.membershipCode,
+            membershipName: nextUser.membershipName,
+            premiumValidUntil: nextUser.premiumValidUntil
+          });
+          writeSession(nextSession);
+          onSessionUpdate?.(nextSession);
+        }
+      } else {
+        message.error(params.get("message") || "Thanh toán VNPay chưa thành công.");
+      }
+      navigate(location.pathname, { replace: true });
+    }
+
+    refreshAfterPayment();
+  }, [location.search]);
 
   async function handleSubmitKyc(values) {
     const selectedFile = kycFileList[0]?.originFileObj || null;
@@ -795,7 +828,12 @@ export function ReaderCard({ session, onSessionUpdate }) {
   async function handleSubscribe() {
     setUpgrading(true);
     try {
-      await apiClient.post(`/memberships/subscription/${readerUserId}?membershipId=${selectedPackageId || ''}`);
+      const payment = await libraryApi.payments.createPremiumVnpay(selectedPackageId);
+      if (!payment?.paymentUrl) {
+        throw new Error("Không nhận được liên kết thanh toán VNPay.");
+      }
+      window.location.assign(payment.paymentUrl);
+      return;
       
       message.success(`Đăng ký ${selectedPackage?.name || "gói hội viên"} thành công!`);
       setPaySubscriptionOpen(false);
@@ -803,7 +841,8 @@ export function ReaderCard({ session, onSessionUpdate }) {
       const nextSession = normalizeSession({
         ...session,
         membershipCode: selectedPackage?.code || "PREMIUM",
-        membershipName: selectedPackage?.name || "Gói Premium"
+        membershipName: selectedPackage?.name || "Gói Premium",
+        premiumValidUntil: session?.premiumValidUntil
       });
       writeSession(nextSession);
       onSessionUpdate?.(nextSession);
@@ -903,69 +942,53 @@ export function ReaderCard({ session, onSessionUpdate }) {
         open={paySubscriptionOpen} 
         title={paymentStep ? "Thanh toán đăng ký" : "Chọn gói hội viên"} 
         onCancel={() => setPaySubscriptionOpen(false)} 
-        footer={
-          paymentStep ? [
-            <Button key="back" onClick={() => setPaymentStep(false)} disabled={upgrading}>Quay lại</Button>,
-            <Button key="paid" type="primary" icon={<BankOutlined />} loading={upgrading} onClick={handleSubscribe}>Đã thanh toán</Button>
-          ] : [
-            <Button key="close" onClick={() => setPaySubscriptionOpen(false)}>Đóng</Button>,
-            <Button key="confirm" type="primary" onClick={() => setPaymentStep(true)} disabled={!selectedPackageId || loadingPackages}>Xác nhận</Button>
-          ]
-        }
+        footer={[
+          <Button key="close" onClick={() => setPaySubscriptionOpen(false)}>Đóng</Button>,
+          <Button key="confirm" type="primary" icon={<BankOutlined />} loading={upgrading} onClick={handleSubscribe} disabled={!selectedPackageId || loadingPackages}>Thanh toán VNPay</Button>
+        ]}
       >
-        {!paymentStep ? (
-          <div className="package-selection-body" style={{ paddingTop: 8 }}>
-            <List
-              loading={loadingPackages}
-              dataSource={upgradePackages}
-              renderItem={(pkg) => (
-                <List.Item
-                  onClick={() => setSelectedPackageId(pkg.id)}
-                  style={{
-                    cursor: 'pointer',
-                    border: selectedPackageId === pkg.id ? '2px solid #1677ff' : '1px solid #d9d9d9',
-                    borderRadius: 8,
-                    padding: '12px 16px',
-                    marginBottom: 12,
-                    background: selectedPackageId === pkg.id ? '#e6f4ff' : 'transparent',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  <List.Item.Meta
-                    title={<Space size={8}>{pkg.name || pkg.code} {selectedPackageId === pkg.id && <CheckCircleOutlined style={{ color: '#1677ff' }} />}</Space>}
-                    description={`Mượn tối đa ${pkg.maxBorrowLimit || 3} cuốn`}
-                  />
-                  <div style={{ textAlign: 'right' }}>
-                    <strong style={{ fontSize: 16, color: '#1677ff' }}>{formatCurrency(pkg.pricePerMonth || pkg.price || 49000)}</strong>
-                    <div style={{ fontSize: 12, color: '#888' }}>/ tháng</div>
-                  </div>
-                </List.Item>
-              )}
-            />
-            {selectedPackage && (
-              <div style={{ marginTop: 8, padding: '12px 16px', background: '#f5f5f5', borderRadius: 8, border: '1px solid #e8e8e8' }}>
-                <Typography.Text strong style={{ display: 'block', marginBottom: 8, color: '#1677ff' }}>Chi tiết quyền lợi:</Typography.Text>
-                <ul style={{ margin: 0, paddingLeft: 20, lineHeight: '1.8' }}>
-                  <li>Được mượn tối đa: <strong>{selectedPackage.maxBorrowLimit || 3} cuốn</strong> cùng lúc</li>
-                  <li>Phí giao hàng: <strong>{selectedPackage.deliveryFee === 0 ? "Miễn phí" : formatCurrency(selectedPackage.deliveryFee || 20000)}</strong></li>
-                  <li>Ưu tiên xử lý đơn: <strong>{selectedPackage.priorityProcessing ? "Có" : "Không"}</strong></li>
-                  {selectedPackage.benefitsDescription && (
-                    <li>{selectedPackage.benefitsDescription}</li>
-                  )}
-                </ul>
-              </div>
+        <div className="package-selection-body" style={{ paddingTop: 8 }}>
+          <List
+            loading={loadingPackages}
+            dataSource={upgradePackages}
+            renderItem={(pkg) => (
+              <List.Item
+                onClick={() => setSelectedPackageId(pkg.id)}
+                style={{
+                  cursor: 'pointer',
+                  border: selectedPackageId === pkg.id ? '2px solid #1677ff' : '1px solid #d9d9d9',
+                  borderRadius: 8,
+                  padding: '12px 16px',
+                  marginBottom: 12,
+                  background: selectedPackageId === pkg.id ? '#e6f4ff' : 'transparent',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <List.Item.Meta
+                  title={<Space size={8}>{pkg.name || pkg.code} {selectedPackageId === pkg.id && <CheckCircleOutlined style={{ color: '#1677ff' }} />}</Space>}
+                  description={`Mượn tối đa ${pkg.maxBorrowLimit || 3} cuốn`}
+                />
+                <div style={{ textAlign: 'right' }}>
+                  <strong style={{ fontSize: 16, color: '#1677ff' }}>{formatCurrency(pkg.pricePerMonth || pkg.price || 49000)}</strong>
+                  <div style={{ fontSize: 12, color: '#888' }}>/ tháng</div>
+                </div>
+              </List.Item>
             )}
-          </div>
-        ) : (
-          <div className="payment-modal-body">
-            <FakeQr label={selectedPackage?.code || "PREMIUM"} />
-            <Space direction="vertical" align="center" style={{ width: "100%", marginTop: 16 }}>
-              <Tag color="blue" icon={<CreditCardOutlined />}>Momo/VNPay</Tag>
-              <Typography.Title level={4} style={{ margin: 0 }}>{formatCurrency(selectedPackage?.pricePerMonth || selectedPackage?.price || 49000)}</Typography.Title>
-              <Typography.Text type="secondary">{selectedPackage?.name || 'Phí duy trì gói hội viên (30 ngày)'}</Typography.Text>
-            </Space>
-          </div>
-        )}
+          />
+          {selectedPackage && (
+            <div style={{ marginTop: 8, padding: '12px 16px', background: '#f5f5f5', borderRadius: 8, border: '1px solid #e8e8e8' }}>
+              <Typography.Text strong style={{ display: 'block', marginBottom: 8, color: '#1677ff' }}>Chi tiết quyền lợi:</Typography.Text>
+              <ul style={{ margin: 0, paddingLeft: 20, lineHeight: '1.8' }}>
+                <li>Được mượn tối đa: <strong>{selectedPackage.maxBorrowLimit || 3} cuốn</strong> cùng lúc</li>
+                <li>Phí giao hàng: <strong>{selectedPackage.deliveryFee === 0 ? "Miễn phí" : formatCurrency(selectedPackage.deliveryFee || 20000)}</strong></li>
+                <li>Ưu tiên xử lý đơn: <strong>{selectedPackage.priorityProcessing ? "Có" : "Không"}</strong></li>
+                {selectedPackage.benefitsDescription && (
+                  <li>{selectedPackage.benefitsDescription}</li>
+                )}
+              </ul>
+            </div>
+          )}
+        </div>
       </Modal>
     </div>
   );
