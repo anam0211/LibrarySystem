@@ -189,7 +189,7 @@ function ReaderHeader({ user, session, unpaidAmount }) {
         {user?.membershipCode && user?.membershipCode !== "FREE" ? (
           <Tag color="gold">{user?.membershipName || user?.membershipCode}</Tag>
         ) : (
-          <Tag color="default">Thành viên cơ bản</Tag>
+          <Tag color="default">{user?.membershipName && user.membershipCode === "FREE" ? user.membershipName : "Thành viên cơ bản"}</Tag>
         )}
         {unpaidAmount > 0 ? <Tag color="red">Nợ phạt {formatCurrency(unpaidAmount)}</Tag> : null}
         <Link to="/reader/cart">
@@ -676,8 +676,6 @@ export function ReaderCard({ session, onSessionUpdate }) {
   const [kycForm] = Form.useForm();
   const [autoOpened, setAutoOpened] = useState(false);
   const { user, setUser, loadReader } = useReaderData(session);
-  const location = useLocation();
-  const navigate = useNavigate();
   const [kycFileList, setKycFileList] = useState([]);
   const [submittingKyc, setSubmittingKyc] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
@@ -686,6 +684,7 @@ export function ReaderCard({ session, onSessionUpdate }) {
   const [upgradePackages, setUpgradePackages] = useState([]);
   const [selectedPackageId, setSelectedPackageId] = useState(null);
   const [loadingPackages, setLoadingPackages] = useState(false);
+  const [hasHigherTier, setHasHigherTier] = useState(true);
   const [qrIssuedAt, setQrIssuedAt] = useState(() => Date.now());
   const cardCode = user?.cardCode || "Chưa cấp thẻ";
   const readerUserId = user?.id || session?.id;
@@ -694,6 +693,27 @@ export function ReaderCard({ session, onSessionUpdate }) {
   const submitButtonLabel = hasExistingKycDocument || user?.kycStatus === "PENDING" ? "Cập nhật KYC" : "Gửi hồ sơ xác thực";
   
   const selectedPackage = upgradePackages.find(p => p.id === selectedPackageId);
+
+  useEffect(() => {
+    async function checkHigherTier() {
+      if (!user?.membershipCode || user.membershipCode === "FREE") {
+        setHasHigherTier(true);
+        return;
+      }
+      try {
+        const res = await apiClient.get('/memberships');
+        const payload = res.data || res;
+        const items = Array.isArray(payload) ? payload : (payload?.result || []);
+        const currentPkg = items.find(m => m.code === user.membershipCode);
+        const currentPrice = currentPkg ? (currentPkg.pricePerMonth || currentPkg.price || 0) : 0;
+        const hasHigher = items.some(m => (m.pricePerMonth || m.price || 0) > currentPrice);
+        setHasHigherTier(hasHigher);
+      } catch (e) {
+        setHasHigherTier(true);
+      }
+    }
+    checkHigherTier();
+  }, [user?.membershipCode]);
 
   useEffect(() => {
     setQrIssuedAt(Date.now());
@@ -732,7 +752,7 @@ export function ReaderCard({ session, onSessionUpdate }) {
 
     async function refreshAfterPayment() {
       if (paymentStatus === "success") {
-        message.success("Thanh toán VNPay thành công. Gói Premium đã được kích hoạt.");
+        message.success("Thanh toán thành công. Gói hội viên mới đã được kích hoạt.");
         const nextUser = await loadReader();
         if (nextUser) {
           const nextSession = normalizeSession({
@@ -840,8 +860,8 @@ export function ReaderCard({ session, onSessionUpdate }) {
       
       const nextSession = normalizeSession({
         ...session,
-        membershipCode: selectedPackage?.code || "PREMIUM",
-        membershipName: selectedPackage?.name || "Gói Premium",
+        membershipCode: selectedPackage?.code || user?.membershipCode || "PREMIUM",
+        membershipName: selectedPackage?.name || user?.membershipName || "Gói hội viên",
         premiumValidUntil: session?.premiumValidUntil
       });
       writeSession(nextSession);
@@ -898,13 +918,15 @@ export function ReaderCard({ session, onSessionUpdate }) {
                     <Typography.Text type="secondary">
                       (Hạn tới: {formatDate(user?.premiumValidUntil)})
                     </Typography.Text>
-                    <Button size="small" style={{ background: "gold", borderColor: "gold", color: "black", fontWeight: 500 }} onClick={() => handleOpenSubscription()}>
-                      Nâng cấp
-                    </Button>
+                    {hasHigherTier && (
+                      <Button size="small" style={{ background: "gold", borderColor: "gold", color: "black", fontWeight: 500 }} onClick={() => handleOpenSubscription()}>
+                        Nâng cấp
+                      </Button>
+                    )}
                   </Space>
                 ) : (
                   <Space>
-                    <Tag>Cơ bản</Tag>
+                    <Tag>{user?.membershipName && user.membershipCode === "FREE" ? user.membershipName : "Cơ bản"}</Tag>
                     <Button size="small" style={{ background: "gold", borderColor: "gold", color: "black", fontWeight: 500 }} onClick={() => handleOpenSubscription()}>
                       Đăng ký
                     </Button>

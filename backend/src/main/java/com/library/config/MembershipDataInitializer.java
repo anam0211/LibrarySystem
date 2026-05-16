@@ -29,21 +29,21 @@ public class MembershipDataInitializer implements ApplicationRunner {
     public void run(ApplicationArguments args) {
         Membership freePlan = upsertPlan(
                 "FREE",
-                "Goi mien phi",
+                "Gói miễn phí",
                 0D,
                 3,
                 20000D,
                 false,
-                "Muon toi da 3 cuon. Phi giao sach tan nha 20.000d / don.");
+                "Mượn tối đa 3 cuốn. Phí giao sách tận nhà 20.000d / đơn.");
 
         upsertPlan(
                 "PREMIUM",
-                "Goi Premium",
+                "Gói Premium",
                 49000D,
                 6,
                 0D,
                 true,
-                "Muon toi da 6 cuon. Mien phi giao sach va uu tien xu ly.");
+                "Mượn tối đa 6 cuốn. Miễn phí giao sách và ưu tiên xử lý.");
 
         assignFreePlanToUsersWithoutMembership(freePlan);
     }
