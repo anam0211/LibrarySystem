@@ -1,4 +1,5 @@
 import {
+  CrownOutlined,
   FilterOutlined,
   LoginOutlined,
   RightOutlined,
@@ -235,6 +236,14 @@ export default function Home({ session, onLogout }) {
               onClick={() => navigate(session ? "/reader" : "/login")}
             >
               Tài khoản của tôi
+            </Button>
+            <Button
+              size="large"
+              icon={<CrownOutlined />}
+              style={{ background: "gold", borderColor: "gold", color: "black", fontWeight: 500 }}
+            onClick={() => navigate("/plans")}
+            >
+              Đăng ký Hội viên
             </Button>
           </div>
         </div>

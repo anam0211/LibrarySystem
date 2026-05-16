@@ -24,6 +24,7 @@ import Reader, { ReaderCard, ReaderFavorites, ReaderFines, ReaderOrders, ReaderR
 import Notifications from "./pages/Notifications";
 import Users from "./pages/Users";
 import AdminMemberships from "./pages/AdminMemberships";
+import Plans from "./pages/Plans";
 
 function ScrollToTop() {
   const { pathname, search } = useLocation();
@@ -79,6 +80,7 @@ export default function App() {
         <Route path="/" element={<Home session={session} onLogout={handleLogout} />} />
         <Route path="/leaderboard" element={<Leaderboard session={session} onLogout={handleLogout} />} />
         <Route path="/book/:bookId" element={<BookDetail session={session} onLogout={handleLogout} />} />
+        <Route path="/plans" element={<Plans session={session} onLogout={handleLogout} />} />
         <Route
           path="/login"
           element={session ? <Navigate to={defaultProtectedPath} replace /> : <Login onLogin={handleLogin} />}

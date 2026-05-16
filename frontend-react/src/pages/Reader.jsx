@@ -670,7 +670,10 @@ export function ReaderFavorites({ session }) {
 }
 
 export function ReaderCard({ session, onSessionUpdate }) {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [kycForm] = Form.useForm();
+  const [autoOpened, setAutoOpened] = useState(false);
   const { user, setUser, loadReader } = useReaderData(session);
   const [kycFileList, setKycFileList] = useState([]);
   const [submittingKyc, setSubmittingKyc] = useState(false);
@@ -694,6 +697,19 @@ export function ReaderCard({ session, onSessionUpdate }) {
     const timer = window.setInterval(() => setQrIssuedAt(Date.now()), READER_QR_TTL_MS);
     return () => window.clearInterval(timer);
   }, [session?.id]);
+
+  useEffect(() => {
+    if (user && location.state?.autoOpenSubscription && !autoOpened) {
+      handleOpenSubscription(location.state.selectedPlanId);
+      setAutoOpened(true);
+      
+      // Xóa state để không bị tự động mở lại nếu người dùng F5
+      const nextState = { ...location.state };
+      delete nextState.autoOpenSubscription;
+      delete nextState.selectedPlanId;
+      navigate(location.pathname, { replace: true, state: nextState });
+    }
+  }, [user, location.state, autoOpened, navigate, location.pathname]);
 
   useEffect(() => {
     kycForm.setFieldsValue({
@@ -736,7 +752,7 @@ export function ReaderCard({ session, onSessionUpdate }) {
     }
   }
 
-  async function handleOpenSubscription() {
+  async function handleOpenSubscription(preselectedPlanId) {
     setPaySubscriptionOpen(true);
     setPaymentStep(false);
     setLoadingPackages(true);
@@ -757,7 +773,12 @@ export function ReaderCard({ session, onSessionUpdate }) {
       
       if (premiums.length > 0) {
         setUpgradePackages(premiums);
-        setSelectedPackageId(premiums[0].id);
+        // Chọn gói từ URL nếu có, nếu không thì chọn gói mặc định đầu tiên
+        if (preselectedPlanId && premiums.some(p => p.id === preselectedPlanId)) {
+          setSelectedPackageId(preselectedPlanId);
+        } else {
+          setSelectedPackageId(premiums[0].id);
+        }
       } else {
         message.info("Bạn đang sử dụng gói hội viên cao cấp nhất!");
         setPaySubscriptionOpen(false);
@@ -838,14 +859,14 @@ export function ReaderCard({ session, onSessionUpdate }) {
                     <Typography.Text type="secondary">
                       (Hạn tới: {formatDate(user?.premiumValidUntil)})
                     </Typography.Text>
-                    <Button size="small" style={{ background: "gold", borderColor: "gold", color: "black", fontWeight: 500 }} onClick={handleOpenSubscription}>
+                    <Button size="small" style={{ background: "gold", borderColor: "gold", color: "black", fontWeight: 500 }} onClick={() => handleOpenSubscription()}>
                       Nâng cấp
                     </Button>
                   </Space>
                 ) : (
                   <Space>
                     <Tag>Cơ bản</Tag>
-                    <Button size="small" style={{ background: "gold", borderColor: "gold", color: "black", fontWeight: 500 }} onClick={handleOpenSubscription}>
+                    <Button size="small" style={{ background: "gold", borderColor: "gold", color: "black", fontWeight: 500 }} onClick={() => handleOpenSubscription()}>
                       Đăng ký
                     </Button>
                   </Space>

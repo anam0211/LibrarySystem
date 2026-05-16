@@ -121,6 +121,10 @@ public class UserController {
         if (request.getEmail() != null) user.setEmail(request.getEmail());
         if (request.getPhone() != null) user.setPhone(request.getPhone());
         if (request.getRole() != null) user.setRole(request.getRole());
+        
+        if (request.getMembership() != null) {
+            user.setMembership(request.getMembership());
+        }
 
         userRepository.save(user);
         

@@ -355,11 +355,11 @@ export default function Cart({ session }) {
                         Bạn đang giữ <strong>{currentBorrowed}</strong> cuốn (đang mượn/chờ duyệt), nên chỉ có thể mượn thêm tối đa <strong>{availableQuota}</strong> cuốn. Vui lòng bỏ bớt sách ra khỏi giỏ!
                       </Typography.Text>
                       {(!user?.membershipCode || user?.membershipCode === 'FREE') ? (
-                        <Link to="/reader/card" style={{ display: "block", marginTop: 4 }}>
+                      <Link to="/plans" style={{ display: "block", marginTop: 4 }}>
                           <Button size="small" style={{ background: "gold", borderColor: "gold", color: "black", fontWeight: 500 }}>Đăng ký Hội viên ngay</Button>
                         </Link>
                       ) : hasHigherTier ? (
-                        <Link to="/reader/card" style={{ display: "block", marginTop: 4 }}>
+                      <Link to="/plans" style={{ display: "block", marginTop: 4 }}>
                           <Button size="small" style={{ background: "gold", borderColor: "gold", color: "black", fontWeight: 500 }}>Nâng cấp gói hội viên</Button>
                         </Link>
                       ) : null}

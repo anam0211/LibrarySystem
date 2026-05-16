@@ -24,7 +24,10 @@ export default function Login({ onLogin }) {
     writeSession(session);
     onLogin(session);
     message.success("Đăng nhập thành công.");
-    navigate(location.state?.from?.pathname || getDefaultRoute(session.role), { replace: true });
+    navigate(location.state?.from?.pathname || getDefaultRoute(session.role), { 
+      replace: true,
+      state: location.state
+    });
   }
 
   async function handleLogin(values) {

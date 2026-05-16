@@ -20,6 +20,7 @@ import {
   message
 } from "antd";
 import { useEffect, useState } from "react";
+import { apiClient } from "../api/apiClient";
 import { libraryApi } from "../api/libraryApi";
 import PageHeader from "../components/PageHeader";
 import { formatDate } from "../components/formatters";
@@ -27,6 +28,7 @@ import { formatDate } from "../components/formatters";
 export default function Users() {
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState([]);
+  const [memberships, setMemberships] = useState([]);
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState(undefined);
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -48,6 +50,10 @@ export default function Users() {
 
   useEffect(() => {
     loadUsers();
+    apiClient.get('/memberships').then(res => {
+      const payload = res.data || res;
+      setMemberships(Array.isArray(payload) ? payload : (payload?.result || []));
+    }).catch(() => {});
   }, []);
 
   async function handleSuspend(record) {
@@ -82,18 +88,27 @@ export default function Users() {
 
   function handleEdit(record) {
     setEditingUser(record);
+    const currentMembership = memberships.find(m => m.code === record.membershipCode);
     form.setFieldsValue({
       fullName: record.fullName,
       email: record.email,
       phone: record.phone,
-      role: record.role
+      role: record.role,
+      membershipId: currentMembership?.id || null
     });
     setEditModalOpen(true);
   }
 
   async function handleUpdate(values) {
     try {
-      await libraryApi.users.update(editingUser.id, values);
+      const payload = {
+        fullName: values.fullName,
+        email: values.email,
+        phone: values.phone,
+        role: values.role,
+        membership: values.membershipId ? { id: values.membershipId } : null
+      };
+      await libraryApi.users.update(editingUser.id, payload);
       message.success("Đã cập nhật thông tin người dùng.");
       setEditModalOpen(false);
       setEditingUser(null);
@@ -178,6 +193,13 @@ export default function Users() {
                 return <Tag color={isVerified ? "green" : "red"}>{isVerified ? "VERIFIED" : "UNVERIFIED"}</Tag>;
               }
             },
+          {
+            title: "Gói hội viên",
+            dataIndex: "membershipCode",
+            render: (value, record) => (
+              (!value || value === "FREE") ? <Tag>Cơ bản</Tag> : <Tag color="gold" style={{ textTransform: 'uppercase' }}>{record.membershipName || value}</Tag>
+            )
+          },
             {
               title: "Tạo lúc",
               dataIndex: "createdAt",
@@ -281,6 +303,16 @@ export default function Users() {
                 { label: "Thủ thư (LIBRARIAN)", value: "LIBRARIAN" },
                 { label: "Quản trị viên (ADMIN)", value: "ADMIN" }
               ]}
+            />
+          </Form.Item>
+          <Form.Item
+            name="membershipId"
+            label="Gói hội viên"
+            rules={[{ required: true, message: "Vui lòng chọn gói hội viên" }]}
+          >
+            <Select
+              options={memberships.map(m => ({ label: m.name || m.code, value: m.id }))}
+              placeholder="Chọn gói hội viên"
             />
           </Form.Item>
         </Form>
