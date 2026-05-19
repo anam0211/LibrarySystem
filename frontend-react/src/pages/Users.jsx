@@ -106,7 +106,7 @@ export default function Users() {
         email: values.email,
         phone: values.phone,
         role: values.role,
-        membership: values.membershipId ? { id: values.membershipId } : null
+        membershipId: values.membershipId || null
       };
       await libraryApi.users.update(editingUser.id, payload);
       message.success("Đã cập nhật thông tin người dùng.");

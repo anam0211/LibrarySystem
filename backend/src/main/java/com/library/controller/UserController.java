@@ -18,16 +18,21 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.library.entity.User;
 import com.library.entity.UserStatus;
+import com.library.entity.Role;
+import com.library.entity.Membership;
 import com.library.repository.UserRepository;
+import com.library.repository.MembershipRepository;
 
 @RestController
 @RequestMapping("/api/users")
 @CrossOrigin("*")
 public class UserController {
     private final UserRepository userRepository;
+    private final MembershipRepository membershipRepository;
 
-    public UserController(UserRepository userRepository) {
+    public UserController(UserRepository userRepository, MembershipRepository membershipRepository) {
         this.userRepository = userRepository;
+        this.membershipRepository = membershipRepository;
     }
 
     @GetMapping("/me")
@@ -61,21 +66,27 @@ public class UserController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<?> updateUser(@PathVariable Integer id, @RequestBody User request) {
+    public ResponseEntity<?> updateUser(@PathVariable Integer id, @RequestBody Map<String, Object> request) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Khong tim thay nguoi dung voi ID nay!"));
 
-        if (request.getFullName() != null) {
-            user.setFullName(request.getFullName());
+        if (request.get("fullName") != null) {
+            user.setFullName((String) request.get("fullName"));
         }
-        if (request.getEmail() != null) {
-            user.setEmail(request.getEmail());
+        if (request.get("email") != null) {
+            user.setEmail((String) request.get("email"));
         }
-        if (request.getPhone() != null) {
-            user.setPhone(request.getPhone());
+        if (request.get("phone") != null) {
+            user.setPhone((String) request.get("phone"));
         }
-        if (request.getRole() != null) {
-            user.setRole(request.getRole());
+        if (request.get("role") != null) {
+            user.setRole(Role.valueOf((String) request.get("role")));
+        }
+        if (request.containsKey("membershipId") && request.get("membershipId") != null) {
+            Integer membershipId = Integer.valueOf(request.get("membershipId").toString());
+            Membership membership = membershipRepository.findById(membershipId)
+                    .orElseThrow(() -> new RuntimeException("Khong tim thay goi hoi vien!"));
+            user.setMembership(membership);
         }
 
         userRepository.save(user);
