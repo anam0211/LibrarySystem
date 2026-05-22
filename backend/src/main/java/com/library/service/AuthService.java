@@ -2,12 +2,15 @@ package com.library.service;
 
 import org.springframework.context.annotation.Lazy;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import com.library.config.MembershipProperties;
 import com.library.dto.request.LoginRequest;
 import com.library.dto.request.RegisterRequest;
 import com.library.dto.response.AuthResponse;
@@ -28,15 +31,18 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
     private final MembershipRepository membershipRepository;
+    private final MembershipProperties membershipProperties;
 
     public AuthService(@Lazy AuthenticationManager authenticationManager, UserRepository userRepository,
                       @Lazy PasswordEncoder passwordEncoder,@Lazy JwtTokenProvider jwtTokenProvider,
-                      MembershipRepository membershipRepository) {
+                      MembershipRepository membershipRepository,
+                      MembershipProperties membershipProperties) {
         this.authenticationManager = authenticationManager;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenProvider = jwtTokenProvider;
         this.membershipRepository = membershipRepository;
+        this.membershipProperties = membershipProperties;
     }
 
     // Xử lý Đăng ký
@@ -45,8 +51,9 @@ public class AuthService {
             throw new RuntimeException("Email đã được sử dụng!");
         }
 
-        Membership freePlan = membershipRepository.findByCode("FREE")
-                .orElseThrow(() -> new RuntimeException("Gói FREE chưa được cấu hình trong hệ thống!"));
+        String freeCode = normalizeCode(membershipProperties.getFreeCode());
+        Membership freePlan = membershipRepository.findByCode(freeCode)
+                .orElseThrow(() -> new RuntimeException("Gói miễn phí chưa được cấu hình trong hệ thống: " + freeCode));
 
         User user = User.builder()
                 .fullName(request.getFullName())
@@ -65,6 +72,13 @@ public class AuthService {
 
     // Xử lý Đăng nhập
     public AuthResponse login(LoginRequest request) {
+        User user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new BadCredentialsException("Email hoặc mật khẩu không đúng."));
+
+        if (user.getStatus() != UserStatus.ACTIVE) {
+            throw new DisabledException("Tài khoản đã bị khóa. Vui lòng liên hệ quản trị viên.");
+        }
+
         // 1. Xác thực tài khoản và mật khẩu (Spring Security sẽ tự động gọi CustomUserDetailsService)
         Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword())
@@ -76,9 +90,6 @@ public class AuthService {
         // 3. Sinh token
         String jwt = jwtTokenProvider.generateToken(request.getEmail());
 
-        // 4. Lấy thông tin user để trả về kèm token
-        User user = userRepository.findByEmail(request.getEmail()).orElseThrow();
-
         return AuthResponse.builder()
                 .token(jwt)
                 .type("Bearer")
@@ -87,5 +98,9 @@ public class AuthService {
                 .fullName(user.getFullName())
                 .role(user.getRole().name())
                 .build();
+    }
+
+    private String normalizeCode(String code) {
+        return code == null ? "" : code.trim().toUpperCase();
     }
 }

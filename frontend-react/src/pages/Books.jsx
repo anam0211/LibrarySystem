@@ -1,5 +1,6 @@
 import {
   DeleteOutlined,
+  EditOutlined,
   EyeOutlined,
   PlusOutlined,
   SearchOutlined
@@ -11,11 +12,13 @@ import {
   Drawer,
   Form,
   Input,
+  Modal,
   Pagination,
   Popconfirm,
   Select,
   Space,
   Table,
+  Tabs,
   Tag,
   Typography,
   message
@@ -81,6 +84,265 @@ function renderBookStatusTag(status, stockAvailable) {
   }
 
   return <Tag color={Number(stockAvailable || 0) > 0 ? "green" : "gold"}>ACTIVE</Tag>;
+}
+
+const COPY_STATUS_OPTIONS = [
+  { label: "AVAILABLE", value: "AVAILABLE" },
+  { label: "RESERVED", value: "RESERVED" },
+  { label: "BORROWED", value: "BORROWED" },
+  { label: "DAMAGED", value: "DAMAGED" },
+  { label: "LOST", value: "LOST" }
+];
+
+const COPY_CONDITION_OPTIONS = [
+  { label: "GOOD", value: "GOOD" },
+  { label: "DAMAGED", value: "DAMAGED" },
+  { label: "LOST", value: "LOST" }
+];
+
+function renderCopyStatus(status) {
+  const color = {
+    AVAILABLE: "green",
+    RESERVED: "blue",
+    BORROWED: "gold",
+    DAMAGED: "orange",
+    LOST: "red"
+  }[status] || "default";
+
+  return <Tag color={color}>{status || "-"}</Tag>;
+}
+
+function BookCopiesPanel({ onStockChanged }) {
+  const [form] = Form.useForm();
+  const [books, setBooks] = useState([]);
+  const [selectedBookId, setSelectedBookId] = useState(null);
+  const [copies, setCopies] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingCopy, setEditingCopy] = useState(null);
+
+  async function loadBookOptions() {
+    try {
+      const pageData = await libraryApi.books.list({
+        page: 0,
+        size: 200,
+        status: "ALL",
+        sortBy: "title",
+        sortDir: "asc"
+      });
+      const items = Array.isArray(pageData?.items) ? pageData.items : [];
+      setBooks(items);
+
+      if (!selectedBookId && items[0]?.id) {
+        setSelectedBookId(items[0].id);
+        loadCopies(items[0].id);
+      }
+    } catch (error) {
+      message.error(error.message);
+    }
+  }
+
+  async function loadCopies(bookId = selectedBookId) {
+    if (!bookId) {
+      setCopies([]);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const data = await libraryApi.bookCopies.byBook(bookId);
+      setCopies(Array.isArray(data) ? data : []);
+    } catch (error) {
+      message.error(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadBookOptions();
+  }, []);
+
+  function openCreateCopy() {
+    setEditingCopy(null);
+    form.setFieldsValue({
+      barcode: "",
+      status: "AVAILABLE",
+      condition: "GOOD"
+    });
+    setModalOpen(true);
+  }
+
+  function openEditCopy(copy) {
+    setEditingCopy(copy);
+    form.setFieldsValue({
+      barcode: copy.barcode,
+      status: copy.status || "AVAILABLE",
+      condition: copy.condition || "GOOD"
+    });
+    setModalOpen(true);
+  }
+
+  async function saveCopy(values) {
+    if (!selectedBookId) {
+      message.warning("Chọn sách trước khi thêm bản sao.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      if (editingCopy?.id) {
+        await libraryApi.bookCopies.update(editingCopy.id, values);
+        message.success("Đã cập nhật bản sao.");
+      } else {
+        await libraryApi.bookCopies.create(selectedBookId, values);
+        message.success("Đã thêm bản sao.");
+      }
+
+      setModalOpen(false);
+      setEditingCopy(null);
+      await loadCopies(selectedBookId);
+      await loadBookOptions();
+      onStockChanged?.();
+    } catch (error) {
+      message.error(error.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteCopy(copy) {
+    try {
+      await libraryApi.bookCopies.remove(copy.id);
+      message.success("Đã xóa bản sao.");
+      await loadCopies(selectedBookId);
+      await loadBookOptions();
+      onStockChanged?.();
+    } catch (error) {
+      message.error(error.message);
+    }
+  }
+
+  const selectedBook = books.find((book) => book.id === selectedBookId);
+
+  return (
+    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+      <Card className="glass-card">
+        <Space wrap align="end" style={{ width: "100%", justifyContent: "space-between" }}>
+          <Form layout="vertical" style={{ minWidth: 320 }}>
+            <Form.Item label="Chọn sách" style={{ marginBottom: 0 }}>
+              <Select
+                showSearch
+                value={selectedBookId}
+                placeholder="Chọn đầu sách"
+                optionFilterProp="label"
+                style={{ minWidth: 360 }}
+                options={books.map((book) => ({
+                  label: `${book.title} (${book.stockAvailable}/${book.stockTotal})`,
+                  value: book.id
+                }))}
+                onChange={(value) => {
+                  setSelectedBookId(value);
+                  loadCopies(value);
+                }}
+              />
+            </Form.Item>
+          </Form>
+          <Button type="primary" icon={<PlusOutlined />} disabled={!selectedBookId} onClick={openCreateCopy}>
+            Thêm bản sao
+          </Button>
+        </Space>
+      </Card>
+
+      <Card
+        className="glass-card"
+        title={selectedBook ? `Bản sao: ${selectedBook.title}` : "Bản sao"}
+        extra={selectedBook ? <Tag color="blue">Tồn kho {formatNumber(selectedBook.stockAvailable)} / {formatNumber(selectedBook.stockTotal)}</Tag> : null}
+      >
+        <Table
+          rowKey="id"
+          loading={loading}
+          dataSource={copies}
+          pagination={{ pageSize: 10 }}
+          columns={[
+            {
+              title: "Barcode",
+              dataIndex: "barcode",
+              render: (value) => <Typography.Text strong>{value}</Typography.Text>
+            },
+            {
+              title: "Trạng thái",
+              dataIndex: "status",
+              render: renderCopyStatus
+            },
+            {
+              title: "Tình trạng",
+              dataIndex: "condition",
+              render: (value) => <Tag>{value || "-"}</Tag>
+            },
+            {
+              title: "Ngày tạo",
+              dataIndex: "createdAt",
+              render: formatDateTime
+            },
+            {
+              title: "Thao tác",
+              width: 140,
+              render: (_, record) => (
+                <Space>
+                  <Button icon={<EditOutlined />} onClick={() => openEditCopy(record)} />
+                  <Popconfirm
+                    title="Xóa bản sao?"
+                    description="Chỉ xóa được bản sao chưa có lịch sử mượn."
+                    okText="Xóa"
+                    cancelText="Hủy"
+                    onConfirm={() => deleteCopy(record)}
+                  >
+                    <Button danger icon={<DeleteOutlined />} />
+                  </Popconfirm>
+                </Space>
+              )
+            }
+          ]}
+        />
+      </Card>
+
+      <Modal
+        open={modalOpen}
+        title={editingCopy ? "Sửa bản sao" : "Thêm bản sao"}
+        okText={editingCopy ? "Cập nhật" : "Thêm"}
+        cancelText="Hủy"
+        confirmLoading={saving}
+        onCancel={() => {
+          setModalOpen(false);
+          setEditingCopy(null);
+        }}
+        onOk={() => form.submit()}
+      >
+        <Form
+          form={form}
+          layout="vertical"
+          initialValues={{ status: "AVAILABLE", condition: "GOOD" }}
+          onFinish={saveCopy}
+        >
+          <Form.Item
+            name="barcode"
+            label="Barcode"
+            rules={[{ required: true, message: "Nhập barcode bản sao." }]}
+          >
+            <Input placeholder="VD: BOOK-1006-001" />
+          </Form.Item>
+          <Form.Item name="status" label="Trạng thái" rules={[{ required: true }]}>
+            <Select options={COPY_STATUS_OPTIONS} />
+          </Form.Item>
+          <Form.Item name="condition" label="Tình trạng" rules={[{ required: true }]}>
+            <Select options={COPY_CONDITION_OPTIONS} />
+          </Form.Item>
+        </Form>
+      </Modal>
+    </Space>
+  );
 }
 
 export default function Books() {
@@ -188,6 +450,7 @@ export default function Books() {
       }
     } catch (error) {
       message.error(error.message);
+      throw error;
     } finally {
       setSaving(false);
     }
@@ -242,6 +505,13 @@ export default function Books() {
         }
       />
 
+      <Tabs
+        items={[
+          {
+            key: "books",
+            label: "Danh sách sách",
+            children: (
+              <>
       <Card className="glass-card">
         <Form
           form={filtersForm}
@@ -455,6 +725,16 @@ export default function Books() {
           </Space>
         ) : null}
       </Drawer>
+              </>
+            )
+          },
+          {
+            key: "copies",
+            label: "Bản sao",
+            children: <BookCopiesPanel onStockChanged={() => loadBooks(filters)} />
+          }
+        ]}
+      />
     </div>
   );
 }

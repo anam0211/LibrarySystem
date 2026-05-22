@@ -19,6 +19,13 @@ public class AdminLoanKanbanResponseDTO {
     private String phone;
     private String trackingCode;
     private LocalDateTime createdAt;
+    private LocalDateTime loanedAt;
+    private LocalDateTime dueAt;
+    private String borrowerCardCode;
+    private String borrowerStudentCode;
+    private String borrowerMembershipCode;
+    private String borrowerMembershipName;
+    private Boolean priorityProcessing;
     private String note;
     private List<LoanTrackingItemResponseDTO> items;
 }

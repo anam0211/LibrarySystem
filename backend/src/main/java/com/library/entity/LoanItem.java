@@ -39,6 +39,10 @@ public class LoanItem {
     @JoinColumn(name = "book_id", nullable = false)
     private Book book;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "copy_id")
+    private BookCopy bookCopy;
+
     @Builder.Default
     @Column(name = "qty", nullable = false)
     private Integer qty = 1;

@@ -25,9 +25,7 @@ import com.library.dto.request.UserKycRequestDTO;
 import com.library.dto.response.PendingKycUserResponseDTO;
 import com.library.dto.response.UserKycResponseDTO;
 import com.library.entity.User;
-import com.library.entity.UserAddress;
 import com.library.entity.VerificationStatus;
-import com.library.repository.UserAddressRepository;
 import com.library.repository.UserRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -51,7 +49,6 @@ public class UserKycService {
     );
 
     private final UserRepository userRepository;
-    private final UserAddressRepository userAddressRepository;
     private final MediaStorageProperties mediaStorageProperties;
 
     @Transactional(readOnly = true)
@@ -324,8 +321,7 @@ public class UserKycService {
     private String resolveSubmittedAddress(User user, UserKycRequestDTO request) {
         String address = firstNonBlank(
                 normalize(request != null ? request.getAddress() : null),
-                normalize(user.getVerificationAddress()),
-                resolveFallbackAddress(user.getId())
+                normalize(user.getVerificationAddress())
         );
 
         if (address == null) {
@@ -360,18 +356,7 @@ public class UserKycService {
     }
 
     private String resolveDisplayAddress(User user) {
-        return firstNonBlank(normalize(user.getVerificationAddress()), resolveFallbackAddress(user.getId()));
-    }
-
-    private String resolveFallbackAddress(Integer userId) {
-        return userAddressRepository.findByUser_IdAndDefaultAddressTrue(userId)
-                .map(UserAddress::getAddressLine)
-                .map(this::normalize)
-                .orElseGet(() -> userAddressRepository.findByUser_IdOrderByDefaultAddressDescIdDesc(userId).stream()
-                        .findFirst()
-                        .map(UserAddress::getAddressLine)
-                        .map(this::normalize)
-                        .orElse(null));
+        return normalize(user.getVerificationAddress());
     }
 
     private String firstNonBlank(String... values) {

@@ -40,6 +40,11 @@ function normalizeBook(rawBook = {}, index = 0) {
 
   return {
     id: Number(rawBook.id),
+    loanItemId: rawBook.loanItemId,
+    copyId: rawBook.copyId,
+    copyBarcode: rawBook.copyBarcode || rawBook.barcode || "",
+    copyStatus: rawBook.copyStatus || "",
+    copyCondition: rawBook.copyCondition || "",
     isbn: rawBook.isbn || "",
     title: rawBook.title || "Sách chưa đặt tên",
     subtitle: rawBook.subtitle || "",
@@ -235,6 +240,7 @@ function mapLoanStatus(rawLoan = {}) {
     PENDING: "NEW",
     PREPARING: "PACKING",
     OPEN: "BORROWING",
+    OVERDUE: "OVERDUE",
     RETURNING: "RETURNING",
     CLOSED: "RETURNED",
     EXPIRED: "OVERDUE",
@@ -254,33 +260,6 @@ function toFrontendReceiveMethod(value, deliveryAddress) {
   }
 
   return "PICKUP";
-}
-
-function makeFallbackTracking(status, receiveMethod) {
-  const labels = receiveMethod === "DELIVERY"
-    ? {
-        NEW: "Đã đặt",
-        PACKING: "Đang gói",
-        SHIPPING: "Đang giao",
-        BORROWING: "Đang mượn",
-        RETURNED: "Đã trả"
-      }
-    : {
-        NEW: "Đã đặt",
-        PACKING: "Sẵn sàng nhận",
-        SHIPPING: "Đã nhận tại quầy",
-        BORROWING: "Đang mượn",
-        RETURNED: "Đã trả"
-      };
-  const order = ["NEW", "PACKING", "SHIPPING", "BORROWING", "RETURNED"];
-  const currentIndex = Math.max(0, order.indexOf(status));
-
-  return order.map((key, index) => ({
-    key,
-    label: labels[key],
-    time: index <= currentIndex ? "BE" : "",
-    done: index <= currentIndex
-  }));
 }
 
 function makeLoanTracking(status, receiveMethod) {
@@ -313,14 +292,29 @@ function makeLoanTracking(status, receiveMethod) {
 
 function normalizeLoan(rawLoan = {}, books = []) {
   const id = rawLoan.id || rawLoan.loanId || rawLoan.code;
+  const firstItemBorrowedAt = Array.isArray(rawLoan.items)
+    ? rawLoan.items.find((item) => item?.borrowedAt)?.borrowedAt
+    : "";
+  const rawItems = Array.isArray(rawLoan.items) ? rawLoan.items : [];
   const loanBooks = Array.isArray(rawLoan.books)
     ? rawLoan.books.map(normalizeBook)
-    : Array.isArray(rawLoan.items)
-      ? rawLoan.items.map((item) => normalizeBook({
-          id: item.bookId || item.id,
-          title: item.bookTitle || item.title,
-          stockAvailable: 1
-        }))
+    : rawItems.length
+      ? rawItems.flatMap((item) => {
+          const quantity = Math.max(1, Number(item.quantity || item.qty || 1));
+          return Array.from({ length: quantity }, (_, index) => normalizeBook({
+            loanItemId: item.loanItemId,
+            id: item.bookId || item.id,
+            title: quantity > 1
+              ? `${item.bookTitle || item.title || "Sách"} (${index + 1}/${quantity})`
+              : item.bookTitle || item.title,
+            copyId: item.copyId,
+            copyBarcode: item.copyBarcode || item.barcode,
+            copyStatus: item.copyStatus,
+            copyCondition: item.copyCondition,
+            stockAvailable: 1,
+            status: item.status
+          }));
+        })
       : rawLoan.book
         ? [normalizeBook({ title: rawLoan.book, id: rawLoan.bookId || id })]
         : books;
@@ -333,6 +327,12 @@ function normalizeLoan(rawLoan = {}, books = []) {
     id: String(id),
     userId: Number(rawLoan.userId || rawLoan.borrowerId || rawLoan.readerId || 0),
     readerName: rawLoan.readerName || rawLoan.reader || rawLoan.borrowerName || "-",
+    readerCardCode: rawLoan.readerCardCode || rawLoan.borrowerCardCode || rawLoan.libraryCardCode || "",
+    studentCode: rawLoan.studentCode || rawLoan.borrowerStudentCode || rawLoan.idCardNumber || "",
+    membershipCode: rawLoan.membershipCode || rawLoan.borrowerMembershipCode || "",
+    membershipName: rawLoan.membershipName || rawLoan.borrowerMembershipName || "",
+    priorityProcessing: Boolean(rawLoan.priorityProcessing),
+    items: rawItems,
     books: loanBooks,
     bookTitle: rawLoan.bookTitle || loanBooks.map((book) => book.title).join(", ") || rawLoan.book || "-",
     receiveMethod,
@@ -340,6 +340,7 @@ function normalizeLoan(rawLoan = {}, books = []) {
     phone: rawLoan.phone || rawLoan.deliveryPhone || "",
     status,
     createdAt: rawLoan.createdAt || rawLoan.borrowDate || rawLoan.createdDate || "",
+    loanedAt: rawLoan.loanedAt || rawLoan.borrowedAt || firstItemBorrowedAt || rawLoan.borrowDate || rawLoan.createdAt || rawLoan.createdDate || "",
     dueDate: rawLoan.dueDate || rawLoan.returnDueDate || rawLoan.dueAt || "",
     deliveryFee: Number(rawLoan.deliveryFee || 0),
     tracking: Array.isArray(rawLoan.tracking) && rawLoan.tracking.length
@@ -356,38 +357,42 @@ function makeFacetFromBooks(books) {
   };
 }
 
-function sortBooks(books, field) {
-  return [...books].sort((left, right) => Number(right[field] || 0) - Number(left[field] || 0)).slice(0, 6);
-}
-
 function normalizeCartBook(item = {}, index = 0) {
+  const quantity = Number(item.quantity ?? item.qty ?? 1);
+
   if (item.title && !item.bookId) {
-    return normalizeBook({
-      ...item,
-      primaryImageUrl: resolvePrimaryImageUrl(item)
-    }, index);
+    return {
+      ...normalizeBook({
+        ...item,
+        primaryImageUrl: resolvePrimaryImageUrl(item)
+      }, index),
+      quantity
+    };
   }
 
   const rawBook = item.book || {};
 
-  return normalizeBook({
-    id: item.bookId || rawBook.id || item.id,
-    title: item.title || item.bookTitle || rawBook.title,
-    description: item.description || rawBook.description,
-    publisherName: item.publisherName || rawBook.publisherName,
-    publisher: item.publisher || rawBook.publisher,
-    publishYear: item.publishYear || rawBook.publishYear,
-    category: item.category || rawBook.category,
-    stockAvailable: item.stockAvailable ?? rawBook.stockAvailable,
-    averageRating: item.averageRating ?? rawBook.averageRating,
-    rating: item.rating ?? rawBook.rating,
-    borrowCount: item.borrowCount ?? rawBook.borrowCount,
-    favoriteCount: item.favoriteCount ?? rawBook.favoriteCount,
-    loanCount: item.loanCount ?? rawBook.loanCount,
-    status: item.status ?? rawBook.status,
-    authors: item.authors || rawBook.authors,
-    primaryImageUrl: resolvePrimaryImageUrl(item)
-  }, index);
+  return {
+    ...normalizeBook({
+      id: item.bookId || rawBook.id || item.id,
+      title: item.title || item.bookTitle || rawBook.title,
+      description: item.description || rawBook.description,
+      publisherName: item.publisherName || rawBook.publisherName,
+      publisher: item.publisher || rawBook.publisher,
+      publishYear: item.publishYear || rawBook.publishYear,
+      category: item.category || rawBook.category,
+      stockAvailable: item.stockAvailable ?? rawBook.stockAvailable,
+      averageRating: item.averageRating ?? rawBook.averageRating,
+      rating: item.rating ?? rawBook.rating,
+      borrowCount: item.borrowCount ?? rawBook.borrowCount,
+      favoriteCount: item.favoriteCount ?? rawBook.favoriteCount,
+      loanCount: item.loanCount ?? rawBook.loanCount,
+      status: item.status ?? rawBook.status,
+      authors: item.authors || rawBook.authors,
+      primaryImageUrl: resolvePrimaryImageUrl(item)
+    }, index),
+    quantity
+  };
 }
 
 function normalizeReview(rawReview = {}) {
@@ -413,6 +418,11 @@ function normalizeFine(rawFine = {}) {
     readerName: rawFine.readerName || rawFine.userName || rawFine.fullName || "-",
     studentCode: rawFine.studentCode || (rawFine.userId ? `USER-${rawFine.userId}` : ""),
     loanId: rawFine.loanId,
+    loanItemId: rawFine.loanItemId,
+    bookId: rawFine.bookId,
+    bookTitle: rawFine.bookTitle || "",
+    copyId: rawFine.copyId,
+    copyBarcode: rawFine.copyBarcode || rawFine.barcode || "",
     amount: Number(rawFine.amount || 0),
     reason: rawFine.reason || "",
     status: rawFine.status || "UNPAID",
@@ -471,9 +481,18 @@ export const libraryGateway = {
     );
   },
 
-  async listUsers() {
+  async updateMyAccount(values) {
     return useBackend(
-      async () => (await libraryApi.users.list()).map(normalizeUser)
+      async () => normalizeUser(await libraryApi.users.updateMe({
+        fullName: values.fullName,
+        phone: values.phone
+      }))
+    );
+  },
+
+  async changeMyPassword(values) {
+    return useBackend(
+      async () => libraryApi.users.changeMyPassword(values)
     );
   },
 
@@ -489,15 +508,6 @@ export const libraryGateway = {
   async approveKyc(userId) {
     return useBackend(
       async () => libraryApi.users.approveKyc(userId)
-    );
-  },
-
-  async listPendingKycUsers() {
-    return useBackend(
-      async () => {
-        const users = await libraryApi.users.pendingKyc();
-        return Array.isArray(users) ? users.map(normalizeUser) : [];
-      }
     );
   },
 
@@ -525,10 +535,6 @@ export const libraryGateway = {
     } catch (backendError) {
       throw backendError;
     }
-  },
-
-  async uploadKyc(userId, file) {
-    return this.saveMyKyc(userId, {}, file, true);
   },
 
   async listBooks(filters = {}) {
@@ -596,13 +602,12 @@ export const libraryGateway = {
   async getLeaderboards() {
     return useBackend(
       async () => {
-        const page = await libraryApi.books.list({ page: 0, size: 200, sortBy: "createdAt", sortDir: "desc" });
-        const books = normalizePage(page).items;
+        const data = await libraryApi.books.leaderboards(6);
 
         return {
-          borrowed: sortBooks(books, "borrowCount"),
-          rated: sortBooks(books, "rating"),
-          favorite: sortBooks(books, "favoriteCount")
+          borrowed: (data.borrowed || []).map(normalizeBook),
+          rated: (data.rated || []).map(normalizeBook),
+          favorite: (data.favorite || []).map(normalizeBook)
         };
       }
     );
@@ -614,11 +619,23 @@ export const libraryGateway = {
     );
   },
 
+  async getCatalogOverview() {
+    return useBackend(
+      async () => libraryApi.reports.catalogOverview()
+    );
+  },
+
+  async getOperationsOverview() {
+    return useBackend(
+      async () => libraryApi.reports.operationsOverview()
+    );
+  },
+
   async toggleWishlist(userId, bookId) {
     return useBackend(
       async () => {
-        await libraryApi.wishlists.toggle(userId, bookId);
-        const wishlist = await libraryApi.wishlists.list(userId);
+        await libraryApi.wishlists.toggleMine(bookId);
+        const wishlist = await libraryApi.wishlists.me();
         return wishlist.map(normalizeCartBook).map((book) => book.id);
       }
     );
@@ -626,7 +643,7 @@ export const libraryGateway = {
 
   async getWishlist(userId) {
     return useBackend(
-      async () => (await libraryApi.wishlists.list(userId)).map(normalizeCartBook)
+      async () => (await libraryApi.wishlists.me()).map(normalizeCartBook)
     );
   },
 
@@ -654,44 +671,50 @@ export const libraryGateway = {
 
   async getCart(userId) {
     return useBackend(
-      async () => (await libraryApi.cart.list(userId)).map(normalizeCartBook)
+      async () => (await libraryApi.cart.me()).map(normalizeCartBook)
     );
   },
 
   async addToCart(userId, bookId) {
     return useBackend(
-      async () => libraryApi.cart.addBook(userId, bookId)
+      async () => libraryApi.cart.addMyBook(bookId)
     );
   },
 
   async removeFromCart(userId, bookId) {
     return useBackend(
-      async () => libraryApi.cart.removeBook(userId, bookId)
+      async () => libraryApi.cart.removeMyBook(bookId)
+    );
+  },
+
+  async updateCartQuantity(userId, bookId, quantity) {
+    return useBackend(
+      async () => normalizeCartBook(await libraryApi.cart.updateMyQuantity(bookId, quantity))
     );
   },
 
   async checkout(userId, values) {
     return useBackend(
       async () => {
-        const cart = await libraryApi.cart.list(userId);
+        const cart = await libraryApi.cart.me();
         const items = cart
-          .map((item) => ({ bookId: item.bookId || item.id, qty: 1 }))
+          .map((item) => ({ bookId: item.bookId || item.id, qty: Number(item.quantity || item.qty || 1) }))
           .filter((item) => item.bookId);
 
         if (!items.length) {
           throw new Error("Gio muon dang trong.");
         }
 
-        const loanId = await libraryApi.circulation.checkoutOnline(userId, {
+        const loanId = await libraryApi.loans.checkout({
           borrowerId: userId,
           dueDays: values.dueDays,
           deliveryMethod: toBackendDeliveryMethod(values.receiveMethod),
-          deliveryAddress: values.address,
-          deliveryPhone: values.phone,
+          address: values.address,
+          phone: values.phone,
           items
         });
 
-        await libraryApi.cart.clear(userId).catch(() => {});
+        await libraryApi.cart.clearMine().catch(() => {});
         return normalizeLoan({
           id: loanId,
           userId,
@@ -709,7 +732,9 @@ export const libraryGateway = {
   async listLoans(userId) {
     return useBackend(
       async () => {
-        const loans = userId ? await libraryApi.circulation.history(userId) : await libraryApi.circulation.recent();
+        const loans = userId
+          ? await libraryApi.circulation.myHistory()
+          : await libraryApi.loans.kanban().catch(() => libraryApi.circulation.recent());
         return Array.isArray(loans) ? loans.map((loan) => normalizeLoan(loan)) : [];
       }
     );
@@ -730,10 +755,25 @@ export const libraryGateway = {
     );
   },
 
+  async confirmReturn(loanId, bookConditions) {
+    return useBackend(
+      async () => normalizeLoan({
+        id: await libraryApi.loans.confirmReturn(loanId, { bookConditions }),
+        status: "RETURNED"
+      })
+    );
+  },
+
+  async sendReturnReminder(loanId) {
+    return useBackend(
+      async () => libraryApi.loans.sendReturnReminder(loanId)
+    );
+  },
+
   async listFines(userId) {
     return useBackend(
       async () => {
-        const fines = userId ? await libraryApi.fines.byUser(userId) : await libraryApi.fines.list();
+        const fines = userId ? await libraryApi.fines.mine() : await libraryApi.fines.list();
         return Array.isArray(fines) ? fines.map(normalizeFine) : [];
       }
     );
@@ -741,43 +781,13 @@ export const libraryGateway = {
 
   async payFine(fineId) {
     return useBackend(
-      async () => normalizeFine(await libraryApi.fines.markPaid(fineId))
+      async () => libraryApi.payments.createFineVnpay(fineId)
     );
   },
 
   async collectFine(fineId) {
     return useBackend(
       async () => normalizeFine(await libraryApi.fines.markPaid(fineId))
-    );
-  },
-
-  async listAddresses(userId) {
-    return useBackend(
-      async () => libraryApi.addresses.byUser(userId)
-    );
-  },
-
-  async saveAddress(userId, values) {
-    return useBackend(
-      async () => libraryApi.addresses.save(userId, values)
-    );
-  },
-
-  async removeAddress(addressId) {
-    return useBackend(
-      async () => libraryApi.addresses.remove(addressId)
-    );
-  },
-
-  async listSystemConfigs() {
-    return useBackend(
-      async () => libraryApi.systemConfigs.list()
-    );
-  },
-
-  async saveSystemConfig(key, values) {
-    return useBackend(
-      async () => libraryApi.systemConfigs.upsert(key, values)
     );
   }
 };

@@ -14,6 +14,7 @@ import {
   Empty,
   Form,
   Input,
+  InputNumber,
   List,
   Radio,
   Row,
@@ -106,12 +107,16 @@ export default function Cart({ session }) {
   const depositAmount = 0;
   const totalPayment = deliveryFee + depositAmount;
   const expectedDueDate = useMemo(() => addDays(dueDays), [dueDays]);
+  const totalQuantity = useMemo(
+    () => cart.reduce((sum, item) => sum + Number(item.quantity || 1), 0),
+    [cart]
+  );
 
   const maxBooksAllowed = userMembership?.maxBorrowLimit ?? (user?.membershipCode && user?.membershipCode !== "FREE" ? 6 : 3);
   const availableQuota = Math.max(0, maxBooksAllowed - currentBorrowed);
-  const isOverLimit = cart.length > availableQuota;
+  const isOverLimit = totalQuantity > availableQuota;
   const isVerified = ["VERIFIED"].includes(user?.kycStatus || user?.verificationStatus || session?.kycStatus || session?.verificationStatus);
-  const canSubmit = Boolean(cart.length) && !isOverLimit && isVerified;
+  const canSubmit = Boolean(totalQuantity) && !isOverLimit && isVerified;
 
   async function loadCart() {
     if (!session?.id) {
@@ -167,6 +172,17 @@ export default function Cart({ session }) {
     window.dispatchEvent(new Event("cartUpdated"));
   }
 
+  async function updateQuantity(bookId, quantity) {
+    const nextQuantity = Number(quantity || 1);
+    try {
+      await libraryGateway.updateCartQuantity(session.id, bookId, nextQuantity);
+      await loadCart();
+      window.dispatchEvent(new Event("cartUpdated"));
+    } catch (error) {
+      message.error(error.message);
+    }
+  }
+
   async function handleCheckout(values) {
     if (!cart.length) {
       message.warning("Giỏ mượn đang trống.");
@@ -194,12 +210,12 @@ export default function Cart({ session }) {
           <h1 className="page-title">Gửi yêu cầu mượn sách</h1>
           <p className="page-copy">Kiểm tra sách, chọn hình thức nhận và gửi yêu cầu tới thư viện.</p>
         </div>
-        <Tag color={cart.length ? "blue" : "default"}>{formatNumber(cart.length)} cuốn trong giỏ</Tag>
+        <Tag color={totalQuantity ? "blue" : "default"}>{formatNumber(totalQuantity)} cuốn trong giỏ</Tag>
       </div>
 
       <Row gutter={[18, 18]} align="start" className="cart-checkout-grid">
         <Col xs={24} lg={11} xl={10}>
-          <Card className="glass-card cart-books-card" title={`Sách trong giỏ (${formatNumber(cart.length)})`}>
+          <Card className="glass-card cart-books-card" title={`Sách trong giỏ (${formatNumber(totalQuantity)})`}>
             {cart.length ? (
               <List
                 className="cart-book-list"
@@ -229,6 +245,16 @@ export default function Cart({ session }) {
                           <Tag color={Number(book.stockAvailable || 0) > 0 ? "green" : "red"}>
                             Còn {formatNumber(book.stockAvailable)} cuốn
                           </Tag>
+                          <Space size={8}>
+                            <Typography.Text type="secondary">Số Lượng: </Typography.Text>
+                            <InputNumber
+                              min={1}
+                              max={Math.max(1, Number(book.stockAvailable || 1))}
+                              value={Number(book.quantity || 1)}
+                              onChange={(value) => updateQuantity(book.id, value)}
+                              size="small"
+                            />
+                          </Space>
                         </Space>
                       }
                     />
@@ -321,7 +347,7 @@ export default function Cart({ session }) {
             </Card>
 
             <Card className="glass-card cart-summary-card" title="Tóm tắt đơn mượn">
-              <SummaryRow label="Số sách" value={`${formatNumber(cart.length)} cuốn`} />
+              <SummaryRow label="Số sách" value={`${formatNumber(totalQuantity)} cuốn`} />
               <SummaryRow label="Hình thức nhận" value={receiveMethod === "DELIVERY" ? "Giao tận nhà" : "Tại quầy"} />
               <SummaryRow label="Số ngày mượn" value={`${formatNumber(dueDays)} ngày`} />
               <SummaryRow label="Hạn trả dự kiến" value={formatDate(expectedDueDate)} />
@@ -369,7 +395,7 @@ export default function Cart({ session }) {
                   <Typography.Text type="danger" strong>Vượt quá số lượng sách có thể đặt</Typography.Text>
                 </div>
               ) : null}
-              {!isVerified && !isOverLimit && cart.length > 0 ? (
+              {!isVerified && !isOverLimit && totalQuantity > 0 ? (
                 <Alert
                   type="warning"
                   showIcon

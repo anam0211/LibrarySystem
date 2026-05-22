@@ -6,11 +6,12 @@ import {
   ClockCircleOutlined,
   CreditCardOutlined,
   EyeOutlined,
-  QrcodeOutlined,
+  LockOutlined,
   ReadOutlined,
   RollbackOutlined,
   ShoppingCartOutlined,
   TruckOutlined,
+  UserOutlined,
   UploadOutlined,
   WalletOutlined
 } from "@ant-design/icons";
@@ -45,20 +46,19 @@ import { libraryApi } from "../api/libraryApi";
 import { libraryGateway } from "../api/libraryGateway";
 import BookCard from "../components/BookCard";
 import { formatCurrency, formatDate, formatDateTime, formatNumber } from "../components/formatters";
-
-const READER_QR_TTL_MS = 60000;
-
-const STATUS_META = {
-  NEW: ["default", "Chờ duyệt"],
-  PACKING: ["cyan", "Cần giao"],
-  SHIPPING: ["blue", "Đang giao"],
-  BORROWING: ["green", "Đang mượn"],
-  RETURNING: ["purple", "Chờ nhận trả"],
-  CHECKING: ["orange", "Đang kiểm tra"],
-  RETURNED: ["green", "Hoàn tất"],
-  OVERDUE: ["red", "Quá hạn"],
-  CANCELLED: ["red", "Đã hủy"]
-};
+import {
+  STATUS_META,
+  READER_QR_TTL_MS,
+  bookCountText,
+  buildReaderQrToken,
+  formatQrTime,
+  isDeliveryLoan,
+  isDueSoon,
+  isOverdue,
+  loanedDateValue,
+  readerLoanStatus,
+  useReaderData
+} from "./readerHelpers";
 
 function StatusBadge({ status }) {
   const [color, label] = STATUS_META[status] || ["default", status];
@@ -69,111 +69,6 @@ function kycTag(status) {
   if (status === "VERIFIED") return <Tag color="green">Đã xác thực</Tag>;
   if (status === "PENDING") return <Tag color="gold">Chờ xác thực</Tag>;
   return <Tag color="red">Chưa xác thực</Tag>;
-}
-
-function isDeliveryLoan(loan) {
-  return loan.receiveMethod === "DELIVERY" || loan.deliveryMethod === "HOME_DELIVERY";
-}
-
-function getDateOnly(value) {
-  if (!value) return null;
-  const parsed = new Date(String(value).includes("T") ? value : `${value}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return null;
-  parsed.setHours(0, 0, 0, 0);
-  return parsed;
-}
-
-function todayStart() {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return today;
-}
-
-function isOverdue(loan) {
-  if (loan.status !== "BORROWING") return false;
-  const dueDate = getDateOnly(loan.dueDate);
-  return dueDate ? dueDate < todayStart() : false;
-}
-
-function isDueSoon(loan) {
-  if (loan.status !== "BORROWING" || isOverdue(loan)) return false;
-  const dueDate = getDateOnly(loan.dueDate);
-  if (!dueDate) return false;
-  const tomorrow = todayStart();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  return dueDate <= tomorrow;
-}
-
-function readerLoanStatus(loan) {
-  return isOverdue(loan) ? "OVERDUE" : loan.status;
-}
-
-function bookCountText(loan) {
-  const count = Array.isArray(loan.books) && loan.books.length ? loan.books.length : 1;
-  return `${count} cuốn`;
-}
-
-function buildReaderQrToken(userId, issuedAt) {
-  const slot = Math.floor(issuedAt / READER_QR_TTL_MS);
-  return `LIBRARY_READER|user_id=${userId || ""}|slot=${slot}`;
-}
-
-function formatQrTime(value) {
-  return new Date(value).toLocaleTimeString("vi-VN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit"
-  });
-}
-
-function isImageMedia(asset) {
-  return ["PNG", "JPG", "JPEG", "WEBP", "GIF"].includes(String(asset?.assetType || "").toUpperCase());
-}
-
-async function attachFavoriteBookCovers(books) {
-  return Promise.all(
-    books.map(async (book) => {
-      if (book.primaryImageUrl) {
-        return book;
-      }
-
-      try {
-        const media = await libraryGateway.getBookMedia(book.id);
-        const coverAsset = media.find((asset) => asset.primary && isImageMedia(asset)) || media.find(isImageMedia);
-        return { ...book, primaryImageUrl: coverAsset?.fileUrl || "" };
-      } catch {
-        return book;
-      }
-    })
-  );
-}
-
-function useReaderData(session) {
-  const [user, setUser] = useState(null);
-  const [loans, setLoans] = useState([]);
-  const [fines, setFines] = useState([]);
-  const [wishlist, setWishlist] = useState([]);
-
-  async function loadReader() {
-    if (!session?.id) return;
-    const [nextUser, nextLoans, nextFines, nextWishlist] = await Promise.all([
-      libraryGateway.getUser(session.id),
-      libraryGateway.listLoans(session.id),
-      libraryGateway.listFines(session.id),
-      libraryGateway.getWishlist(session.id)
-    ]);
-    setUser(nextUser);
-    setLoans(nextLoans);
-    setFines(nextFines);
-    setWishlist(await attachFavoriteBookCovers(nextWishlist));
-    return nextUser;
-  }
-
-  useEffect(() => {
-    loadReader();
-  }, [session?.id]);
-
-  return { user, setUser, loans, fines, wishlist, loadReader };
 }
 
 function ReaderHeader({ user, session, unpaidAmount }) {
@@ -259,10 +154,18 @@ function ReaderAlertSection({ loans }) {
   return <Alert type="success" showIcon message="Bạn không có đơn quá hạn." />;
 }
 
-function BorrowOrderDetailDrawer({ loan, open, onClose, onRequestReturn, returningLoanId }) {
+function BorrowOrderDetailDrawer({ loan, fines = [], open, onClose, onRequestReturn, returningLoanId }) {
   const books = Array.isArray(loan?.books) ? loan.books : [];
   const status = loan ? readerLoanStatus(loan) : "";
   const canReturn = ["BORROWING", "OVERDUE"].includes(status);
+  const loanFines = loan
+    ? fines.filter((fine) => String(fine.loanId || "") === String(loan.id || ""))
+    : [];
+  const unpaidFineAmount = loanFines
+    .filter((fine) => fine.status === "UNPAID")
+    .reduce((sum, fine) => sum + Number(fine.amount || 0), 0);
+  const totalFineAmount = loanFines.reduce((sum, fine) => sum + Number(fine.amount || 0), 0);
+  const displayFineAmount = unpaidFineAmount || totalFineAmount;
 
   return (
     <Drawer title={loan ? `Chi tiết đơn #${loan.id}` : "Chi tiết đơn"} open={open} onClose={onClose} width={560}>
@@ -272,10 +175,30 @@ function BorrowOrderDetailDrawer({ loan, open, onClose, onRequestReturn, returni
             <Descriptions.Item label="Trạng thái"><StatusBadge status={status} /></Descriptions.Item>
             <Descriptions.Item label="Hình thức">{isDeliveryLoan(loan) ? "Giao tận nhà" : "Đến lấy"}</Descriptions.Item>
             <Descriptions.Item label="Số sách">{bookCountText(loan)}</Descriptions.Item>
-            <Descriptions.Item label="Ngày mượn">{formatDate(loan.createdAt)}</Descriptions.Item>
+            <Descriptions.Item label="Ngày mượn">{formatDate(loanedDateValue(loan))}</Descriptions.Item>
             <Descriptions.Item label="Hạn trả">{formatDate(loan.dueDate)}</Descriptions.Item>
-            <Descriptions.Item label="Phí phạt">{status === "OVERDUE" ? formatCurrency(50000) : "Chưa phát sinh"}</Descriptions.Item>
+            <Descriptions.Item label="Phí phạt">
+              {displayFineAmount ? formatCurrency(displayFineAmount) : "Chưa phát sinh"}
+            </Descriptions.Item>
           </Descriptions>
+          {loanFines.length ? (
+            <Card size="small" title="Phiếu phạt">
+              <List
+                dataSource={loanFines}
+                renderItem={(fine) => (
+                  <List.Item>
+                    <Space direction="vertical" size={0}>
+                      <Typography.Text strong>{formatCurrency(fine.amount)}</Typography.Text>
+                      <Typography.Text type="secondary">
+                        {fine.reason} / {fine.status === "UNPAID" ? "Chưa thanh toán" : "Đã thanh toán"}
+                        {fine.copyBarcode ? ` / Mã bản sao: ${fine.copyBarcode}` : ""}
+                      </Typography.Text>
+                    </Space>
+                  </List.Item>
+                )}
+              />
+            </Card>
+          ) : null}
           {status === "OVERDUE" ? <Alert type="error" showIcon message="Đơn đã quá hạn, có thể phát sinh phí phạt." /> : null}
           {status === "RETURNING" ? <Alert type="info" showIcon message="Đang chờ thư viện nhận lại sách." /> : null}
           {status === "CHECKING" ? <Alert type="warning" showIcon message="Thư viện đang kiểm tra sách." /> : null}
@@ -311,16 +234,6 @@ function BorrowOrderDetailDrawer({ loan, open, onClose, onRequestReturn, returni
   );
 }
 
-function FakeQr({ label }) {
-  return (
-    <div className="fake-qr fake-qr-large">
-      {Array.from({ length: 64 }).map((_, index) => (
-        <i key={index} className={(index * 7 + String(label).length) % 4 === 0 ? "on" : ""} />
-      ))}
-    </div>
-  );
-}
-
 function summarizeLoanTitle(loan) {
   const titles = Array.isArray(loan?.books) && loan.books.length
     ? loan.books.map((book) => book?.title).filter(Boolean)
@@ -353,7 +266,7 @@ function useReaderReturnAction(loadReader, onDone) {
 export default function Reader({ session }) {
   const { user, loans, fines, loadReader } = useReaderData(session);
   const [selectedLoan, setSelectedLoan] = useState(null);
-  const { returningLoanId, handleRequestReturn } = useReaderReturnAction(loadReader);
+  const { returningLoanId, handleRequestReturn } = useReaderReturnAction(loadReader, () => setSelectedLoan(null));
   const unpaidAmount = fines.filter((fine) => fine.status === "UNPAID").reduce((sum, fine) => sum + fine.amount, 0);
   const activeLoans = loans.filter((loan) => !["RETURNED", "CANCELLED"].includes(loan.status));
   const cardCode = user?.cardCode || "Chưa cấp thẻ";
@@ -372,7 +285,7 @@ export default function Reader({ session }) {
               <List.Item actions={[<Button type="link" onClick={() => setSelectedLoan(loan)}>Xem chi tiết</Button>]}>
                 <List.Item.Meta
                   title={<Space><Tag color="blue">#{loan.id}</Tag><StatusBadge status={readerLoanStatus(loan)} /></Space>}
-                  description={`${bookCountText(loan)} / Hạn trả: ${formatDate(loan.dueDate)}`}
+                  description={`${bookCountText(loan)} / Ngày mượn: ${formatDate(loanedDateValue(loan))} / Hạn trả: ${formatDate(loan.dueDate)}`}
                 />
               </List.Item>
             )}
@@ -384,7 +297,7 @@ export default function Reader({ session }) {
             locale={{ emptyText: "Không có sách đang mượn." }}
             renderItem={(loan) => (
               <List.Item>
-                <List.Item.Meta avatar={<BookOutlined />} title={loan.bookTitle} description={`${bookCountText(loan)} / ${formatDate(loan.dueDate)}`} />
+                <List.Item.Meta avatar={<BookOutlined />} title={loan.bookTitle} description={`${bookCountText(loan)} / Ngày mượn: ${formatDate(loanedDateValue(loan))} / Hạn trả: ${formatDate(loan.dueDate)}`} />
               </List.Item>
             )}
           />
@@ -396,6 +309,7 @@ export default function Reader({ session }) {
             <Descriptions.Item label="Điện thoại">{user?.phone || session?.phone || "-"}</Descriptions.Item>
             <Descriptions.Item label="Xác thực">{kycTag(user?.kycStatus)}</Descriptions.Item>
           </Descriptions>
+          <Link to="/reader/account"><Button style={{ marginTop: 12 }}>Quản lý tài khoản</Button></Link>
         </Card>
         <Card className="glass-card reader-mini-card" title="Thẻ thư viện" style={user?.membershipCode && user?.membershipCode !== "FREE" ? { borderColor: "gold" } : {}}>
           <Space>
@@ -414,19 +328,163 @@ export default function Reader({ session }) {
           <Link to="/reader/returns"><Button>Trả sách</Button></Link>
           <Link to="/reader/fines"><Button>Nợ phạt</Button></Link>
           <Link to="/reader/favorites"><Button>Yêu thích</Button></Link>
+          <Link to="/reader/account"><Button>Tài khoản</Button></Link>
         </Space>
       </Card>
-      <BorrowOrderDetailDrawer loan={selectedLoan} open={Boolean(selectedLoan)} onClose={() => setSelectedLoan(null)} onRequestReturn={handleRequestReturn} returningLoanId={returningLoanId} />
+      <BorrowOrderDetailDrawer loan={selectedLoan} fines={fines} open={Boolean(selectedLoan)} onClose={() => setSelectedLoan(null)} onRequestReturn={handleRequestReturn} returningLoanId={returningLoanId} />
+    </div>
+  );
+}
+
+export function ReaderAccount({ session, onSessionUpdate }) {
+  const [profileForm] = Form.useForm();
+  const [passwordForm] = Form.useForm();
+  const { user, setUser, loadReader } = useReaderData(session);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+
+  useEffect(() => {
+    profileForm.setFieldsValue({
+      fullName: user?.fullName || session?.fullName || "",
+      email: user?.email || session?.email || "",
+      phone: user?.phone || session?.phone || ""
+    });
+  }, [profileForm, session?.email, session?.fullName, session?.phone, user]);
+
+  async function handleSaveProfile(values) {
+    setSavingProfile(true);
+    try {
+      const nextUser = await libraryGateway.updateMyAccount(values);
+      setUser(nextUser);
+      const nextSession = normalizeSession({
+        ...session,
+        fullName: nextUser.fullName || session?.fullName,
+        phone: nextUser.phone || "",
+        email: nextUser.accountEmail || nextUser.email || session?.email,
+        kycStatus: nextUser.kycStatus || session?.kycStatus,
+        membershipCode: nextUser.membershipCode || session?.membershipCode,
+        membershipName: nextUser.membershipName || session?.membershipName,
+        premiumValidUntil: nextUser.premiumValidUntil || session?.premiumValidUntil
+      });
+      writeSession(nextSession);
+      onSessionUpdate?.(nextSession);
+      message.success("Đã cập nhật thông tin tài khoản.");
+      await loadReader();
+    } catch (error) {
+      message.error(error?.message || "Không thể cập nhật tài khoản.");
+    } finally {
+      setSavingProfile(false);
+    }
+  }
+
+  async function handleChangePassword(values) {
+    setChangingPassword(true);
+    try {
+      await libraryGateway.changeMyPassword(values);
+      passwordForm.resetFields();
+      message.success("Đã đổi mật khẩu.");
+    } catch (error) {
+      const errorMessage = error?.message || "Không thể đổi mật khẩu.";
+      if (errorMessage.toLowerCase().includes("mat khau hien tai")
+          || errorMessage.toLowerCase().includes("mật khẩu hiện tại")) {
+        passwordForm.setFields([{ name: "currentPassword", errors: [errorMessage] }]);
+      }
+      message.error(errorMessage);
+    } finally {
+      setChangingPassword(false);
+    }
+  }
+
+  function handlePasswordValidationFailed({ errorFields }) {
+    const firstError = errorFields?.[0]?.errors?.[0];
+    message.error(firstError || "Vui lòng kiểm tra lại thông tin đổi mật khẩu.");
+  }
+
+  return (
+    <div className="page-shell reader-dashboard">
+      <div className="page-toolbar">
+        <div>
+          <p className="page-eyebrow">Tài khoản</p>
+          <h1 className="page-title">Quản lý tài khoản</h1>
+        </div>
+      </div>
+
+      <Row gutter={[18, 18]}>
+        <Col xs={24} lg={14}>
+          <Card className="glass-card" title={<Space><UserOutlined />Thông tin cá nhân</Space>}>
+            <Form form={profileForm} layout="vertical" onFinish={handleSaveProfile}>
+              <Row gutter={14}>
+                <Col xs={24} md={12}>
+                  <Form.Item name="fullName" label="Họ tên" rules={[{ required: true, message: "Vui lòng nhập họ tên." }]}>
+                    <Input placeholder="Nhập họ tên" />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Form.Item name="email" label="Email đăng nhập">
+                    <Input disabled />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Form.Item name="phone" label="Số điện thoại">
+                    <Input placeholder="Nhập số điện thoại" />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Button type="primary" htmlType="submit" loading={savingProfile}>
+                Lưu thay đổi
+              </Button>
+            </Form>
+          </Card>
+        </Col>
+
+        <Col xs={24} lg={10}>
+          <Card className="glass-card" title={<Space><LockOutlined />Đổi mật khẩu</Space>}>
+            <Form
+              form={passwordForm}
+              layout="vertical"
+              onFinish={handleChangePassword}
+              onFinishFailed={handlePasswordValidationFailed}
+            >
+              <Form.Item name="currentPassword" label="Mật khẩu hiện tại" rules={[{ required: true, message: "Vui lòng nhập mật khẩu hiện tại." }]}>
+                <Input.Password autoComplete="current-password" />
+              </Form.Item>
+              <Form.Item name="newPassword" label="Mật khẩu mới" rules={[{ required: true, message: "Vui lòng nhập mật khẩu mới." }, { min: 6, message: "Mật khẩu mới tối thiểu 6 ký tự." }]}>
+                <Input.Password autoComplete="new-password" />
+              </Form.Item>
+              <Form.Item
+                name="confirmPassword"
+                label="Xác nhận mật khẩu mới"
+                dependencies={["newPassword"]}
+                rules={[
+                  { required: true, message: "Vui lòng xác nhận mật khẩu mới." },
+                  ({ getFieldValue }) => ({
+                    validator(_, value) {
+                      return !value || getFieldValue("newPassword") === value
+                        ? Promise.resolve()
+                        : Promise.reject(new Error("Xác nhận mật khẩu không khớp."));
+                    }
+                  })
+                ]}
+              >
+                <Input.Password autoComplete="new-password" />
+              </Form.Item>
+              <Button type="primary" htmlType="submit" loading={changingPassword}>
+                Đổi mật khẩu
+              </Button>
+            </Form>
+          </Card>
+        </Col>
+      </Row>
     </div>
   );
 }
 
 export function ReaderOrders({ session }) {
-  const { loans, loadReader } = useReaderData(session);
+  const { loans, fines, loadReader } = useReaderData(session);
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [selectedLoan, setSelectedLoan] = useState(null);
-  const { returningLoanId, handleRequestReturn } = useReaderReturnAction(loadReader);
+  const { returningLoanId, handleRequestReturn } = useReaderReturnAction(loadReader, () => setSelectedLoan(null));
 
   const filteredLoans = useMemo(() => loans.filter((loan) => {
     const status = readerLoanStatus(loan);
@@ -439,7 +497,7 @@ export function ReaderOrders({ session }) {
     { title: "Mã đơn", dataIndex: "id", width: 100, render: (value) => <Tag color="blue">#{value}</Tag> },
     { title: "Số sách", width: 90, render: (_, loan) => bookCountText(loan) },
     { title: "Hình thức", width: 130, render: (_, loan) => isDeliveryLoan(loan) ? "Giao tận nhà" : "Đến lấy" },
-    { title: "Ngày mượn", dataIndex: "createdAt", width: 120, render: formatDate },
+    { title: "Ngày mượn", width: 120, render: (_, loan) => formatDate(loanedDateValue(loan)) },
     { title: "Hạn trả", dataIndex: "dueDate", width: 120, render: formatDate },
     { title: "Trạng thái", width: 140, render: (_, loan) => <StatusBadge status={readerLoanStatus(loan)} /> },
     {
@@ -480,13 +538,13 @@ export function ReaderOrders({ session }) {
         </Space>
         <Table rowKey="id" columns={columns} dataSource={filteredLoans} scroll={{ x: 900 }} pagination={{ pageSize: 5, showSizeChanger: true, pageSizeOptions: [5, 10] }} />
       </Card>
-      <BorrowOrderDetailDrawer loan={selectedLoan} open={Boolean(selectedLoan)} onClose={() => setSelectedLoan(null)} onRequestReturn={handleRequestReturn} returningLoanId={returningLoanId} />
+      <BorrowOrderDetailDrawer loan={selectedLoan} fines={fines} open={Boolean(selectedLoan)} onClose={() => setSelectedLoan(null)} onRequestReturn={handleRequestReturn} returningLoanId={returningLoanId} />
     </div>
   );
 }
 
 export function ReaderReturns({ session }) {
-  const { loans, loadReader } = useReaderData(session);
+  const { loans, fines, loadReader } = useReaderData(session);
   const [selectedLoan, setSelectedLoan] = useState(null);
   const { returningLoanId, handleRequestReturn } = useReaderReturnAction(loadReader, () => setSelectedLoan(null));
   const borrowableLoans = loans.filter((loan) => ["BORROWING", "OVERDUE"].includes(readerLoanStatus(loan)));
@@ -536,6 +594,7 @@ export function ReaderReturns({ session }) {
                   </div>
                   <div className="return-request-meta">
                     <span><strong>Số sách:</strong> {bookCountText(loan)}</span>
+                    <span><strong>Ngày mượn:</strong> {formatDate(loanedDateValue(loan))}</span>
                     <span><strong>Hạn trả:</strong> {formatDate(loan.dueDate)}</span>
                     <span><strong>Trạng thái:</strong> {statusLabel}</span>
                   </div>
@@ -545,7 +604,7 @@ export function ReaderReturns({ session }) {
           }}
         />
       </Card>
-      <BorrowOrderDetailDrawer loan={selectedLoan} open={Boolean(selectedLoan)} onClose={() => setSelectedLoan(null)} onRequestReturn={handleRequestReturn} returningLoanId={returningLoanId} />
+      <BorrowOrderDetailDrawer loan={selectedLoan} fines={fines} open={Boolean(selectedLoan)} onClose={() => setSelectedLoan(null)} onRequestReturn={handleRequestReturn} returningLoanId={returningLoanId} />
     </div>
   );
 }
@@ -554,15 +613,36 @@ export function ReaderFines({ session }) {
   const { fines, loadReader } = useReaderData(session);
   const [payFine, setPayFine] = useState(null);
   const [selectedFine, setSelectedFine] = useState(null);
+  const location = useLocation();
+  const navigate = useNavigate();
   const unpaid = fines.filter((fine) => fine.status === "UNPAID");
   const total = unpaid.reduce((sum, fine) => sum + fine.amount, 0);
 
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const paymentStatus = params.get("vnpay");
+    if (!paymentStatus) {
+      return;
+    }
+
+    if (paymentStatus === "success") {
+      message.success("Thanh toán phiếu phạt thành công.");
+      loadReader();
+    } else {
+      message.error(params.get("message") || "Thanh toán VNPay chưa thành công.");
+    }
+
+    navigate(location.pathname, { replace: true });
+  }, [location.search]);
+
   async function handlePayFine() {
     try {
-      await libraryApi.fines.markPaid(payFine.id);
-      message.success("Thanh toán phạt thành công.");
+      const payment = await libraryGateway.payFine(payFine.id);
+      if (!payment?.paymentUrl) {
+        throw new Error("Không lấy được liên kết thanh toán VNPay.");
+      }
       setPayFine(null);
-      loadReader();
+      window.location.href = payment.paymentUrl;
     } catch (error) {
       message.error(error?.message || "Không thể thanh toán phiếu phạt.");
     }
@@ -588,10 +668,10 @@ export function ReaderFines({ session }) {
               <List.Item
                 actions={[
                   <Button icon={<EyeOutlined />} onClick={() => setSelectedFine(fine)}>Chi tiết</Button>,
-                  fine.status === "UNPAID" ? <Button type="primary" icon={<QrcodeOutlined />} onClick={() => setPayFine(fine)}>Thanh toán</Button> : <Tag color="green">Đã thanh toán</Tag>
+                  fine.status === "UNPAID" ? <Button type="primary" icon={<CreditCardOutlined />} onClick={() => setPayFine(fine)}>Thanh toán VNPay</Button> : <Tag color="green">Đã thanh toán</Tag>
                 ]}
               >
-                <List.Item.Meta title={`${fine.loanId ? `Đơn #${fine.loanId}` : "Phiếu phạt"} - ${formatCurrency(fine.amount)}`} description={`${fine.reason} / ${fine.status === "UNPAID" ? "Chưa thanh toán" : "Đã thanh toán"}`} />
+                <List.Item.Meta title={`${fine.loanId ? `Đơn #${fine.loanId}` : "Phiếu phạt"} - ${formatCurrency(fine.amount)}`} description={`${fine.reason} / ${fine.status === "UNPAID" ? "Chưa thanh toán" : "Đã thanh toán"}${fine.copyBarcode ? ` / Mã bản sao: ${fine.copyBarcode}` : ""}`} />
               </List.Item>
             )}
           />
@@ -599,17 +679,17 @@ export function ReaderFines({ session }) {
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Bạn không có khoản phạt nào." />
         )}
       </Card>
-      <Modal open={Boolean(payFine)} title="Thanh toán phạt bằng QR giả lập" onCancel={() => setPayFine(null)} footer={[
+      <Modal open={Boolean(payFine)} title="Thanh toán phiếu phạt qua VNPay" onCancel={() => setPayFine(null)} footer={[
         <Button key="close" onClick={() => setPayFine(null)}>Đóng</Button>,
-        <Button key="paid" type="primary" icon={<BankOutlined />} onClick={handlePayFine}>Đã thanh toán</Button>
+        <Button key="paid" type="primary" icon={<BankOutlined />} onClick={handlePayFine}>Thanh toán qua VNPay</Button>
       ]}>
         {payFine ? (
           <div className="payment-modal-body">
-            <FakeQr label={payFine.id} />
             <Space direction="vertical">
-              <Tag color="blue" icon={<CreditCardOutlined />}>Momo/VNPay</Tag>
+              <Tag color="blue" icon={<CreditCardOutlined />}>VNPay</Tag>
               <Typography.Title level={4}>{formatCurrency(payFine.amount)}</Typography.Title>
               <Typography.Text>{payFine.reason}</Typography.Text>
+              <Typography.Text type="secondary">Bạn sẽ được chuyển sang cổng thanh toán VNPay.</Typography.Text>
             </Space>
           </div>
         ) : null}
@@ -619,6 +699,8 @@ export function ReaderFines({ session }) {
           <Descriptions column={1} bordered size="small">
             <Descriptions.Item label="Mã phiếu">#{selectedFine.id}</Descriptions.Item>
             <Descriptions.Item label="Mã đơn">{selectedFine.loanId ? `#${selectedFine.loanId}` : "-"}</Descriptions.Item>
+            <Descriptions.Item label="Sách">{selectedFine.bookTitle || "-"}</Descriptions.Item>
+            <Descriptions.Item label="Mã bản sao">{selectedFine.copyBarcode || "-"}</Descriptions.Item>
             <Descriptions.Item label="Số tiền">{formatCurrency(selectedFine.amount)}</Descriptions.Item>
             <Descriptions.Item label="Lý do">{selectedFine.reason}</Descriptions.Item>
             <Descriptions.Item label="Trạng thái">{selectedFine.status === "UNPAID" ? <Tag color="red">Chưa thanh toán</Tag> : <Tag color="green">Đã thanh toán</Tag>}</Descriptions.Item>
@@ -680,7 +762,6 @@ export function ReaderCard({ session, onSessionUpdate }) {
   const [submittingKyc, setSubmittingKyc] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
   const [paySubscriptionOpen, setPaySubscriptionOpen] = useState(false);
-  const [paymentStep, setPaymentStep] = useState(false);
   const [upgradePackages, setUpgradePackages] = useState([]);
   const [selectedPackageId, setSelectedPackageId] = useState(null);
   const [loadingPackages, setLoadingPackages] = useState(false);
@@ -807,7 +888,6 @@ export function ReaderCard({ session, onSessionUpdate }) {
 
   async function handleOpenSubscription(preselectedPlanId) {
     setPaySubscriptionOpen(true);
-    setPaymentStep(false);
     setLoadingPackages(true);
     try {
       const res = await apiClient.get('/memberships');
@@ -837,7 +917,6 @@ export function ReaderCard({ session, onSessionUpdate }) {
         setPaySubscriptionOpen(false);
       }
     } catch (error) {
-      console.error("Lỗi lấy danh sách gói:", error);
       message.error("Không thể tải danh sách gói hội viên. Vui lòng thử lại!");
       setPaySubscriptionOpen(false);
     } finally {
@@ -854,20 +933,6 @@ export function ReaderCard({ session, onSessionUpdate }) {
       }
       window.location.assign(payment.paymentUrl);
       return;
-      
-      message.success(`Đăng ký ${selectedPackage?.name || "gói hội viên"} thành công!`);
-      setPaySubscriptionOpen(false);
-      
-      const nextSession = normalizeSession({
-        ...session,
-        membershipCode: selectedPackage?.code || user?.membershipCode || "PREMIUM",
-        membershipName: selectedPackage?.name || user?.membershipName || "Gói hội viên",
-        premiumValidUntil: session?.premiumValidUntil
-      });
-      writeSession(nextSession);
-      onSessionUpdate?.(nextSession);
-      
-      await loadReader();
     } catch (error) {
       const errorMsg = error?.response?.data?.message || error?.message || "Lỗi kết nối đến máy chủ khi đăng ký.";
       message.error(errorMsg);
@@ -962,7 +1027,7 @@ export function ReaderCard({ session, onSessionUpdate }) {
 
       <Modal 
         open={paySubscriptionOpen} 
-        title={paymentStep ? "Thanh toán đăng ký" : "Chọn gói hội viên"} 
+        title="Chọn gói hội viên"
         onCancel={() => setPaySubscriptionOpen(false)} 
         footer={[
           <Button key="close" onClick={() => setPaySubscriptionOpen(false)}>Đóng</Button>,

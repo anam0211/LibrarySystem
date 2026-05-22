@@ -1,5 +1,5 @@
 import { StarFilled, TrophyOutlined } from "@ant-design/icons";
-import { Card, Col, Row, Space, Spin, Tabs, Tag, Typography } from "antd";
+import { Card, Col, Empty, Row, Space, Spin, Tabs, Tag, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { toAbsoluteMediaUrl } from "../api/apiClient";
@@ -22,7 +22,15 @@ function BookVisual({ book }) {
   );
 }
 
+function formatRating(value) {
+  return Number(value || 0).toFixed(1);
+}
+
 function RankingGrid({ books, metric }) {
+  if (!books.length) {
+    return <Empty description="Chưa có dữ liệu xếp hạng" />;
+  }
+
   return (
     <Row gutter={[16, 16]}>
       {books.map((book, index) => (
@@ -39,7 +47,7 @@ function RankingGrid({ books, metric }) {
               <Typography.Title level={4}>{book.title}</Typography.Title>
               <Typography.Text type="secondary">{(book.authors || []).join(", ")}</Typography.Text>
               <p className="mini">
-                <StarFilled style={{ color: "#f5a623" }} /> {book.rating} / {formatNumber(book.borrowCount)} lượt mượn
+                <StarFilled style={{ color: "#f5a623" }} /> {formatRating(book.rating)} / {formatNumber(book.borrowCount)} lượt mượn
               </p>
             </div>
           </Link>
@@ -95,19 +103,19 @@ export default function Leaderboard({ session, onLogout }) {
                   key: "borrowed",
                   label: "Top mượn nhiều",
                   children: (
-                    <RankingGrid books={leaderboards.borrowed} metric={(book) => `${book.borrowCount} lượt`} />
+                    <RankingGrid books={leaderboards.borrowed} metric={(book) => `${formatNumber(book.borrowCount)} lượt`} />
                   )
                 },
                 {
                   key: "rated",
                   label: "Top đánh giá",
-                  children: <RankingGrid books={leaderboards.rated} metric={(book) => `${book.rating} sao`} />
+                  children: <RankingGrid books={leaderboards.rated} metric={(book) => `${formatRating(book.rating)} sao`} />
                 },
                 {
                   key: "favorite",
                   label: "Yêu thích nhất",
                   children: (
-                    <RankingGrid books={leaderboards.favorite} metric={(book) => `${book.favoriteCount} thích`} />
+                    <RankingGrid books={leaderboards.favorite} metric={(book) => `${formatNumber(book.favoriteCount)} thích`} />
                   )
                 }
               ]}

@@ -16,6 +16,10 @@ public interface CartItemRepository extends JpaRepository<CartItem, Integer> {
 
     @EntityGraph(attributePaths = {"book", "cart", "cart.user"})
     Optional<CartItem> findByCart_IdAndBook_Id(Integer cartId, Integer bookId);
+
+    @EntityGraph(attributePaths = {"book", "cart", "cart.user"})
+    Optional<CartItem> findByCart_User_IdAndBook_Id(Integer userId, Integer bookId);
+
     void deleteByCart_User_IdAndBook_Id(Integer userId, Integer bookId);
     void deleteByCart_User_Id(Integer userId);
 }

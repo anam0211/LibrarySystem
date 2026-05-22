@@ -68,13 +68,34 @@ export default function BookFormModal({
   }, [form, initialValues, open]);
 
   async function handleSubmit() {
-    const values = await form.validateFields();
+    try {
+      const values = await form.validateFields();
 
-    await onSubmit({
-      ...values,
-      coverFile: coverFiles[0]?.originFileObj || null,
-      resourceFiles: resourceFiles.map((item) => item.originFileObj).filter(Boolean)
-    });
+      await onSubmit({
+        ...values,
+        coverFile: coverFiles[0]?.originFileObj || null,
+        resourceFiles: resourceFiles.map((item) => item.originFileObj).filter(Boolean)
+      });
+    } catch (error) {
+      if (error?.errorFields) {
+        return;
+      }
+
+      if (String(error?.message || "").toLowerCase().includes("isbn")) {
+        form.setFields([
+          {
+            name: "isbn",
+            errors: [error.message]
+          }
+        ]);
+        requestAnimationFrame(() => {
+          form.scrollToField("isbn", {
+            behavior: "smooth",
+            block: "center"
+          });
+        });
+      }
+    }
   }
 
   return (

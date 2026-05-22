@@ -64,8 +64,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET,
                                 "/api/payments/vnpay/return",
                                 "/api/payments/vnpay/ipn").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/payments/vnpay/memberships/premium").authenticated()
-                        .requestMatchers(HttpMethod.POST, "/api/memberships/upgrade/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/payments/vnpay/memberships/checkout",
+                                "/api/payments/vnpay/memberships/premium").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/books").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PUT, "/api/books/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/books/**").hasRole("ADMIN")
@@ -82,20 +83,15 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/media/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/media/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/users/me").authenticated()
+                        .requestMatchers(HttpMethod.PUT, "/api/users/me", "/api/users/me/password").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/users").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PUT, "/api/users/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/users/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/reviews").hasAnyRole("ADMIN", "LIBRARIAN")
                         .requestMatchers(HttpMethod.PUT, "/api/reviews/**").hasRole("LIBRARIAN")
                         .requestMatchers(HttpMethod.GET, "/api/fines").hasAnyRole("ADMIN", "LIBRARIAN")
-                        .requestMatchers(HttpMethod.GET, "/api/fines/unpaid").hasAnyRole("ADMIN", "LIBRARIAN")
                         .requestMatchers(HttpMethod.POST, "/api/fines").hasRole("LIBRARIAN")
                         .requestMatchers(HttpMethod.GET, "/api/circulation/recent").hasAnyRole("ADMIN", "LIBRARIAN")
-                        .requestMatchers(HttpMethod.POST, "/api/circulation/checkout").hasRole("LIBRARIAN")
-                        .requestMatchers(HttpMethod.POST, "/api/circulation/return/**").hasRole("LIBRARIAN")
-                        .requestMatchers(HttpMethod.GET, "/api/circulation/reservations/pending").hasRole("LIBRARIAN")
-                        .requestMatchers(HttpMethod.PUT, "/api/circulation/reservations/**").hasRole("LIBRARIAN")
-                        .requestMatchers(HttpMethod.PUT, "/api/circulation/*/status").hasRole("LIBRARIAN")
                         .requestMatchers(HttpMethod.GET,
                                 "/api/books",
                                 "/api/books/**",

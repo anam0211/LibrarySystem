@@ -1,6 +1,8 @@
 package com.library.controller;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.DisabledException;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -54,11 +56,22 @@ public class AuthController {
                     .result(authResponse)
                     .build();
             return ResponseEntity.ok(apiResponse);
-        } catch (Exception e) {
-            // Trả về lỗi 401 kèm message chuẩn xác
+        } catch (DisabledException e) {
+            ApiResponse<AuthResponse> errorResponse = ApiResponse.<AuthResponse>builder()
+                    .code(423)
+                    .message(e.getMessage())
+                    .build();
+            return ResponseEntity.status(423).body(errorResponse);
+        } catch (BadCredentialsException e) {
             ApiResponse<AuthResponse> errorResponse = ApiResponse.<AuthResponse>builder()
                     .code(401)
-                    .message("Sai email hoặc mật khẩu, hoặc tài khoản bị khóa.")
+                    .message("Email hoặc mật khẩu không đúng.")
+                    .build();
+            return ResponseEntity.status(401).body(errorResponse);
+        } catch (Exception e) {
+            ApiResponse<AuthResponse> errorResponse = ApiResponse.<AuthResponse>builder()
+                    .code(401)
+                    .message("Không thể đăng nhập lúc này. Vui lòng thử lại.")
                     .build();
             return ResponseEntity.status(401).body(errorResponse);
         }

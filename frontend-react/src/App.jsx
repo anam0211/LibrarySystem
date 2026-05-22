@@ -20,7 +20,7 @@ import Login from "./pages/Login";
 import LoanWorkflow from "./pages/LoanWorkflow";
 import Media from "./pages/Media";
 import Publishers from "./pages/Publishers";
-import Reader, { ReaderCard, ReaderFavorites, ReaderFines, ReaderOrders, ReaderReturns } from "./pages/Reader";
+import Reader, { ReaderAccount, ReaderCard, ReaderFavorites, ReaderFines, ReaderOrders, ReaderReturns } from "./pages/Reader";
 import Notifications from "./pages/Notifications";
 import Users from "./pages/Users";
 import AdminMemberships from "./pages/AdminMemberships";
@@ -124,6 +124,10 @@ export default function App() {
           <Route
             path="/reader/card"
             element={<ReaderCard session={session} onSessionUpdate={handleLogin} />}
+          />
+          <Route
+            path="/reader/account"
+            element={<ReaderAccount session={session} onSessionUpdate={handleLogin} />}
           />
           <Route
             path="/reader/cart"

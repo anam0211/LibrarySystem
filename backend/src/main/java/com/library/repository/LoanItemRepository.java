@@ -7,4 +7,5 @@ import com.library.entity.LoanItem;
 
 @Repository
 public interface LoanItemRepository extends JpaRepository<LoanItem, Integer> {
+    boolean existsByBookCopy_Id(Integer copyId);
 }

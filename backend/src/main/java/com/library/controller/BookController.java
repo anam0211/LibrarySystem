@@ -11,6 +11,7 @@ import lombok.experimental.FieldDefaults;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/books")
@@ -38,11 +39,6 @@ public class BookController {
         );
     }
 
-    @GetMapping("/{id}")
-    public ApiResponse<BookResponseDTO> getBookById(@PathVariable Integer id) {
-        return ApiResponse.success(bookService.getBookById(id));
-    }
-
     @GetMapping("/newest")
     public ApiResponse<List<BookResponseDTO>> getNewestBooks(@RequestParam(defaultValue = "8") int limit) {
         return ApiResponse.success(bookService.getNewestBooks(limit));
@@ -51,6 +47,16 @@ public class BookController {
     @GetMapping("/featured")
     public ApiResponse<List<BookResponseDTO>> getFeaturedBooks(@RequestParam(defaultValue = "8") int limit) {
         return ApiResponse.success(bookService.getFeaturedBooks(limit));
+    }
+
+    @GetMapping("/leaderboards")
+    public ApiResponse<Map<String, List<BookResponseDTO>>> getLeaderboards(@RequestParam(defaultValue = "6") int limit) {
+        return ApiResponse.success(bookService.getLeaderboards(limit));
+    }
+
+    @GetMapping("/{id:\\d+}")
+    public ApiResponse<BookResponseDTO> getBookById(@PathVariable Integer id) {
+        return ApiResponse.success(bookService.getBookById(id));
     }
 
     @PostMapping

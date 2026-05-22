@@ -54,6 +54,26 @@ public class CartService {
     }
 
     @Transactional
+    public CartItem updateQuantity(Integer userId, Integer bookId, Integer quantity) {
+        if (quantity == null || quantity < 1) {
+            throw new BadRequestException("So luong sach phai lon hon 0.");
+        }
+
+        CartItem item = cartItemRepository.findByCart_User_IdAndBook_Id(userId, bookId)
+                .orElseThrow(() -> new BadRequestException("Sach khong co trong gio muon."));
+        Book book = item.getBook();
+        ensureBookCanBeBorrowed(book);
+
+        int stockAvailable = book.getStockAvailable() == null ? 0 : book.getStockAvailable();
+        if (quantity > stockAvailable) {
+            throw new BadRequestException("So luong vuot qua so sach con trong kho.");
+        }
+
+        item.setQuantity(quantity);
+        return cartItemRepository.save(item);
+    }
+
+    @Transactional
     public void removeBook(Integer userId, Integer bookId) {
         cartItemRepository.deleteByCart_User_IdAndBook_Id(userId, bookId);
     }

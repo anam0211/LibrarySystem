@@ -10,7 +10,9 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.library.common.response.ApiResponse;
@@ -19,6 +21,7 @@ import com.library.entity.BookImage;
 import com.library.entity.CartItem;
 import com.library.repository.BookImageRepository;
 import com.library.service.CartService;
+import com.library.service.CurrentUserService;
 
 import lombok.RequiredArgsConstructor;
 
@@ -28,10 +31,42 @@ import lombok.RequiredArgsConstructor;
 public class CartController {
 
     private final CartService cartService;
+    private final CurrentUserService currentUserService;
     private final BookImageRepository bookImageRepository;
 
-    @GetMapping("/users/{userId}")
-    public ApiResponse<List<Map<String, Object>>> getCart(@PathVariable Integer userId) {
+    @GetMapping("/me")
+    public ApiResponse<List<Map<String, Object>>> getMyCart() {
+        return getCartResponse(currentUserService.getCurrentUserId());
+    }
+
+    @PostMapping("/me/books/{bookId}")
+    public ApiResponse<Map<String, Object>> addMyBook(@PathVariable Integer bookId) {
+        Integer userId = currentUserService.getCurrentUserId();
+        CartItem item = cartService.addBook(userId, bookId);
+        return ApiResponse.success(toResponse(item, resolvePrimaryImageUrls(List.of(bookId))));
+    }
+
+    @DeleteMapping("/me/books/{bookId}")
+    public ApiResponse<Void> removeMyBook(@PathVariable Integer bookId) {
+        cartService.removeBook(currentUserService.getCurrentUserId(), bookId);
+        return ApiResponse.success(null);
+    }
+
+    @PutMapping("/me/books/{bookId}/quantity")
+    public ApiResponse<Map<String, Object>> updateMyQuantity(
+            @PathVariable Integer bookId,
+            @RequestBody QuantityRequest request) {
+        CartItem item = cartService.updateQuantity(currentUserService.getCurrentUserId(), bookId, request.getQuantity());
+        return ApiResponse.success(toResponse(item, resolvePrimaryImageUrls(List.of(bookId))));
+    }
+
+    @DeleteMapping("/me")
+    public ApiResponse<Void> clearMyCart() {
+        cartService.clear(currentUserService.getCurrentUserId());
+        return ApiResponse.success(null);
+    }
+
+    private ApiResponse<List<Map<String, Object>>> getCartResponse(Integer userId) {
         List<CartItem> items = cartService.getItems(userId);
         Map<Integer, String> primaryImageUrls = resolvePrimaryImageUrls(items.stream()
                 .map(CartItem::getBook)
@@ -44,24 +79,6 @@ public class CartController {
         return ApiResponse.success(items.stream().map(item -> toResponse(item, primaryImageUrls)).toList());
     }
 
-    @PostMapping("/users/{userId}/books/{bookId}")
-    public ApiResponse<Map<String, Object>> addBook(@PathVariable Integer userId, @PathVariable Integer bookId) {
-        CartItem item = cartService.addBook(userId, bookId);
-        return ApiResponse.success(toResponse(item, resolvePrimaryImageUrls(List.of(bookId))));
-    }
-
-    @DeleteMapping("/users/{userId}/books/{bookId}")
-    public ApiResponse<Void> removeBook(@PathVariable Integer userId, @PathVariable Integer bookId) {
-        cartService.removeBook(userId, bookId);
-        return ApiResponse.success(null);
-    }
-
-    @DeleteMapping("/users/{userId}")
-    public ApiResponse<Void> clear(@PathVariable Integer userId) {
-        cartService.clear(userId);
-        return ApiResponse.success(null);
-    }
-
     private Map<String, Object> toResponse(CartItem item, Map<Integer, String> primaryImageUrls) {
         Book book = item.getBook();
         Integer bookId = book != null ? book.getId() : null;
@@ -70,6 +87,7 @@ public class CartController {
         result.put("bookId", bookId);
         result.put("title", book != null ? book.getTitle() : null);
         result.put("stockAvailable", book != null ? book.getStockAvailable() : null);
+        result.put("quantity", item.getQuantity() == null ? 1 : item.getQuantity());
         result.put("primaryImageUrl", bookId != null ? primaryImageUrls.get(bookId) : null);
         result.put("media", bookId != null && primaryImageUrls.get(bookId) != null
                 ? List.of(Map.of(
@@ -110,5 +128,17 @@ public class CartController {
         }
 
         return fileUrl.substring(fileUrl.lastIndexOf('.') + 1).toUpperCase();
+    }
+
+    public static class QuantityRequest {
+        private Integer quantity;
+
+        public Integer getQuantity() {
+            return quantity;
+        }
+
+        public void setQuantity(Integer quantity) {
+            this.quantity = quantity;
+        }
     }
 }

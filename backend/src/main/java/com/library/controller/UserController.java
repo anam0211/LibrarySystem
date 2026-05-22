@@ -6,6 +6,7 @@ import java.util.Map;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -16,6 +17,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.library.common.exception.BadRequestException;
+import com.library.config.MembershipProperties;
+import com.library.dto.request.ChangePasswordRequest;
 import com.library.entity.User;
 import com.library.entity.UserStatus;
 import com.library.entity.Role;
@@ -29,10 +33,18 @@ import com.library.repository.MembershipRepository;
 public class UserController {
     private final UserRepository userRepository;
     private final MembershipRepository membershipRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final MembershipProperties membershipProperties;
 
-    public UserController(UserRepository userRepository, MembershipRepository membershipRepository) {
+    public UserController(
+            UserRepository userRepository,
+            MembershipRepository membershipRepository,
+            PasswordEncoder passwordEncoder,
+            MembershipProperties membershipProperties) {
         this.userRepository = userRepository;
         this.membershipRepository = membershipRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.membershipProperties = membershipProperties;
     }
 
     @GetMapping("/me")
@@ -45,6 +57,60 @@ public class UserController {
                 .orElseThrow(() -> new RuntimeException("Khong tim thay nguoi dung!"));
 
         return ResponseEntity.ok(toUserResponse(user));
+    }
+
+    @PutMapping("/me")
+    @Transactional
+    public ResponseEntity<?> updateCurrentUser(@RequestBody Map<String, Object> request) {
+        User user = getAuthenticatedUser();
+
+        String fullName = normalize((String) request.get("fullName"));
+        String phone = normalize((String) request.get("phone"));
+
+        if (fullName == null) {
+            throw new BadRequestException("Ho ten khong duoc de trong.");
+        }
+
+        user.setFullName(fullName);
+        user.setPhone(phone);
+        userRepository.save(user);
+
+        return ResponseEntity.ok(toUserResponse(user));
+    }
+
+    @PutMapping("/me/password")
+    @Transactional
+    public ResponseEntity<?> changeMyPassword(@RequestBody ChangePasswordRequest request) {
+        User user = getAuthenticatedUser();
+
+        String currentPassword = normalize(request.getCurrentPassword());
+        String newPassword = normalize(request.getNewPassword());
+        String confirmPassword = normalize(request.getConfirmPassword());
+
+        if (currentPassword == null || newPassword == null || confirmPassword == null) {
+            throw new BadRequestException("Vui lòng nhập đầy đủ thông tin mật khẩu.");
+        }
+
+        if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+            throw new BadRequestException("Mật khẩu hiện tại không đúng.");
+        }
+
+        if (newPassword.length() < 6) {
+            throw new BadRequestException("Mật khẩu mới phải có ít nhất 6 ký tự.");
+        }
+
+        if (!newPassword.equals(confirmPassword)) {
+            throw new BadRequestException("Xác nhận mật khẩu mới không khớp.");
+        }
+
+        if (passwordEncoder.matches(newPassword, user.getPasswordHash())) {
+            throw new BadRequestException("Mật khẩu mới không được trùng mật khẩu hiện tại.");
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+
+        return ResponseEntity.ok(Map.of("message", "Đã đổi mật khẩu thành công."));
     }
 
     @GetMapping
@@ -138,8 +204,8 @@ public class UserController {
             userData.put("membershipCode", user.getMembership().getCode());
             userData.put("membershipName", user.getMembership().getName());
         } else {
-            userData.put("membershipCode", "FREE");
-            userData.put("membershipName", "Goi mien phi");
+            userData.put("membershipCode", membershipProperties.getFreeCode());
+            userData.put("membershipName", "Gói cơ bản");
         }
         userData.put("premiumValidUntil", user.getPremiumValidUntil());
 
@@ -148,6 +214,14 @@ public class UserController {
         }
 
         return userData;
+    }
+
+    private User getAuthenticatedUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        String currentEmail = authentication.getName();
+
+        return userRepository.findByEmail(currentEmail)
+                .orElseThrow(() -> new RuntimeException("Khong tim thay nguoi dung!"));
     }
 
     private String firstNonBlank(String... values) {

@@ -3,7 +3,6 @@ package com.library.controller;
 import com.library.common.response.ApiResponse;
 import com.library.common.response.PagedResult;
 import com.library.dto.response.BookResponseDTO;
-import com.library.dto.response.SearchSuggestionResponseDTO;
 import com.library.service.SearchService;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -37,13 +36,5 @@ public class SearchController {
         return ApiResponse.success(
                 searchService.searchBooks(keyword, authorId, categoryId, publisherId, publishYear, status, available, sortBy, sortDir, page, size)
         );
-    }
-
-    @GetMapping("/suggestions")
-    public ApiResponse<SearchSuggestionResponseDTO> suggest(
-            @RequestParam String keyword,
-            @RequestParam(defaultValue = "8") int limit
-    ) {
-        return ApiResponse.success(searchService.suggest(keyword, limit));
     }
 }

@@ -45,6 +45,10 @@ jwt:
 app:
   media:
     upload-dir: "${MEDIA_UPLOAD_DIR:./uploads/media}"
+  membership:
+    free-code: "${MEMBERSHIP_FREE_CODE:FREE}"
+    default-paid-code: "${MEMBERSHIP_DEFAULT_PAID_CODE:PREMIUM}"
+    subscription-days: "${MEMBERSHIP_SUBSCRIPTION_DAYS:30}"
   vnpay:
     pay-url: "${VNPAY_PAY_URL:https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}"
     tmn-code: "${VNPAY_TMN_CODE:P5KY7N8A}"

@@ -76,7 +76,7 @@ export default function AdminFines() {
     }
 
     return fines.filter((fine) =>
-      [fine.readerName, fine.studentCode, fine.loanId, fine.id]
+      [fine.readerName, fine.studentCode, fine.loanId, fine.id, fine.bookTitle, fine.copyBarcode]
         .join(" ")
         .toLowerCase()
         .includes(text)
@@ -152,6 +152,17 @@ export default function AdminFines() {
                 <Space direction="vertical" size={2}>
                   <Typography.Text>{record.readerName}</Typography.Text>
                   <Typography.Text type="secondary">{record.studentCode}</Typography.Text>
+                </Space>
+              )
+            },
+            {
+              title: "Sách / bản sao",
+              render: (_, record) => (
+                <Space direction="vertical" size={2}>
+                  <Typography.Text>{record.bookTitle || "-"}</Typography.Text>
+                  <Typography.Text type="secondary">
+                    {record.copyBarcode ? `Mã bản sao: ${record.copyBarcode}` : "Chưa có mã bản sao"}
+                  </Typography.Text>
                 </Space>
               )
             },

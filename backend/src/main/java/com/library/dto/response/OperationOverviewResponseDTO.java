@@ -22,4 +22,8 @@ public class OperationOverviewResponseDTO {
     long borrowingRecords;
     long overdueRecords;
     long returnedToday;
+    long pickupLoans;
+    long deliveryLoans;
+    long unpaidFineAmount;
+    long membershipRevenue;
 }

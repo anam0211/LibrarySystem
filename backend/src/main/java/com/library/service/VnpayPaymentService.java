@@ -24,10 +24,14 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 import com.library.common.exception.BadRequestException;
 import com.library.common.exception.ResourceNotFoundException;
+import com.library.config.MembershipProperties;
 import com.library.config.VnpayProperties;
+import com.library.entity.Fine;
+import com.library.entity.FineStatus;
 import com.library.entity.Membership;
 import com.library.entity.User;
 import com.library.entity.VnpayPayment;
+import com.library.repository.FineRepository;
 import com.library.repository.MembershipRepository;
 import com.library.repository.UserRepository;
 import com.library.repository.VnpayPaymentRepository;
@@ -45,21 +49,63 @@ public class VnpayPaymentService {
     private final UserRepository userRepository;
     private final MembershipRepository membershipRepository;
     private final MembershipService membershipService;
+    private final FineRepository fineRepository;
+    private final MembershipProperties membershipProperties;
 
     @Transactional
-    public Map<String, Object> createPremiumPayment(String userEmail, String clientIp, String frontendReturnUrl) {
+    public Map<String, Object> createMembershipPayment(String userEmail, Integer membershipId, String clientIp, String frontendReturnUrl) {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay nguoi dung."));
-        Membership premiumPlan = membershipRepository.findByCode("PREMIUM")
-                .orElseThrow(() -> new BadRequestException("Goi Premium chua duoc cau hinh."));
+        Membership targetPlan = resolveMembershipPlan(membershipId);
 
-        long amountVnd = resolveAmountVnd(premiumPlan);
-        String txnRef = buildTxnRef(user.getId());
-        String orderInfo = "Nang cap Premium cho user " + user.getId();
+        long amountVnd = resolveAmountVnd(targetPlan);
+        String txnRef = buildMembershipTxnRef(user.getId());
+        String orderInfo = "Nang cap " + targetPlan.getCode() + " cho user " + user.getId();
 
         VnpayPayment payment = new VnpayPayment();
         payment.setTxnRef(txnRef);
         payment.setUser(user);
+        payment.setMembership(targetPlan);
+        payment.setPaymentType("MEMBERSHIP");
+        payment.setAmountVnd(amountVnd);
+        payment.setOrderInfo(orderInfo);
+        payment.setFrontendReturnUrl(resolveFrontendReturnUrl(frontendReturnUrl));
+        vnpayPaymentRepository.save(payment);
+
+        String paymentUrl = buildPaymentUrl(payment, clientIp);
+        return Map.of(
+                "paymentUrl", paymentUrl,
+                "txnRef", txnRef,
+                "amount", amountVnd,
+                "membershipId", targetPlan.getId(),
+                "membershipCode", targetPlan.getCode(),
+                "membershipName", targetPlan.getName(),
+                "provider", "VNPAY");
+    }
+
+    @Transactional
+    public Map<String, Object> createFinePayment(String userEmail, Integer fineId, String clientIp, String frontendReturnUrl) {
+        User user = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay nguoi dung."));
+        Fine fine = fineRepository.findById(fineId)
+                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay phieu phat."));
+
+        if (fine.getUser() == null || !fine.getUser().getId().equals(user.getId())) {
+            throw new BadRequestException("Ban khong co quyen thanh toan phieu phat nay.");
+        }
+        if (fine.getStatus() == FineStatus.PAID) {
+            throw new BadRequestException("Phieu phat da duoc thanh toan.");
+        }
+
+        long amountVnd = fine.getAmount().setScale(0, RoundingMode.HALF_UP).longValueExact();
+        String txnRef = buildFineTxnRef(user.getId(), fine.getId());
+        String orderInfo = "Thanh toan phieu phat " + fine.getId() + " cho user " + user.getId();
+
+        VnpayPayment payment = new VnpayPayment();
+        payment.setTxnRef(txnRef);
+        payment.setUser(user);
+        payment.setFine(fine);
+        payment.setPaymentType("FINE");
         payment.setAmountVnd(amountVnd);
         payment.setOrderInfo(orderInfo);
         payment.setFrontendReturnUrl(resolveFrontendReturnUrl(frontendReturnUrl));
@@ -143,7 +189,7 @@ public class VnpayPaymentService {
         payment.setVnpTransactionStatus(transactionStatus);
 
         if ("00".equals(responseCode) && "00".equals(transactionStatus)) {
-            membershipService.subscribeMembership(payment.getUser().getId());
+            applySuccessfulPayment(payment);
             payment.setStatus("SUCCESS");
             payment.setPaidAt(LocalDateTime.now(VIETNAM_ZONE));
             return PaymentResult.success(txnRef, fromIpn ? "Confirm Success" : "Thanh toan thanh cong.");
@@ -249,14 +295,48 @@ public class VnpayPaymentService {
         }
     }
 
-    private long resolveAmountVnd(Membership premiumPlan) {
-        BigDecimal price = BigDecimal.valueOf(premiumPlan.getPricePerMonth());
+    private Membership resolveMembershipPlan(Integer membershipId) {
+        if (membershipId != null) {
+            return membershipRepository.findById(membershipId)
+                    .orElseThrow(() -> new BadRequestException("Goi hoi vien khong ton tai."));
+        }
+
+        String defaultPaidCode = normalizeCode(membershipProperties.getDefaultPaidCode());
+        return membershipRepository.findByCode(defaultPaidCode)
+                .orElseThrow(() -> new BadRequestException("Goi hoi vien mac dinh chua duoc cau hinh: " + defaultPaidCode));
+    }
+
+    private long resolveAmountVnd(Membership membershipPlan) {
+        BigDecimal price = BigDecimal.valueOf(membershipPlan.getPricePerMonth());
         return price.setScale(0, RoundingMode.HALF_UP).longValueExact();
     }
 
-    private String buildTxnRef(Integer userId) {
+    private String buildMembershipTxnRef(Integer userId) {
         String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
-        return "PREM" + userId + System.currentTimeMillis() + suffix;
+        return "MEMB" + userId + System.currentTimeMillis() + suffix;
+    }
+
+    private String buildFineTxnRef(Integer userId, Integer fineId) {
+        String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
+        return "FINE" + userId + fineId + System.currentTimeMillis() + suffix;
+    }
+
+    private void applySuccessfulPayment(VnpayPayment payment) {
+        if ("FINE".equalsIgnoreCase(payment.getPaymentType())) {
+            Fine fine = payment.getFine();
+            if (fine == null) {
+                throw new BadRequestException("Giao dich phat khong co phieu phat.");
+            }
+            fine.setStatus(FineStatus.PAID);
+            fine.setPaidAt(LocalDateTime.now(VIETNAM_ZONE));
+            fineRepository.save(fine);
+            return;
+        }
+
+        Membership membership = payment.getMembership();
+        membershipService.subscribeMembership(
+                payment.getUser().getId(),
+                membership != null ? membership.getId() : null);
     }
 
     private String normalizeClientIp(String clientIp) {
@@ -289,6 +369,10 @@ public class VnpayPaymentService {
                 || !StringUtils.hasText(vnpayProperties.getHashSecret())) {
             throw new BadRequestException("Chua cau hinh VNPAY_TMN_CODE va VNPAY_HASH_SECRET.");
         }
+    }
+
+    private String normalizeCode(String code) {
+        return code == null ? "" : code.trim().toUpperCase();
     }
 
     public record PaymentResult(boolean success, String txnRef, String message) {

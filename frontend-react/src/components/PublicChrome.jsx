@@ -52,7 +52,7 @@ export function PublicHeader({
         try {
           const cart = await libraryGateway.getCart(session.id);
           if (active) {
-            setCartCount(cart.length);
+            setCartCount(cart.reduce((sum, item) => sum + Number(item.quantity || 1), 0));
           }
         } catch (error) {
           // Bỏ qua lỗi
@@ -80,7 +80,7 @@ export function PublicHeader({
       }
 
       try {
-        const unreadNotifications = await libraryApi.notifications.unread(session.id);
+        const unreadNotifications = await libraryApi.notifications.myUnread();
         if (active) {
           setUnreadCount(Array.isArray(unreadNotifications) ? unreadNotifications.length : 0);
         }

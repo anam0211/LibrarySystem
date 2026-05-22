@@ -38,6 +38,10 @@ public class Fine {
     @JoinColumn(name = "loan_id", nullable = false)
     private Loan loan;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "loan_item_id")
+    private LoanItem loanItem;
+
     @Column(name = "amount", nullable = false, precision = 12, scale = 2)
     private BigDecimal amount;
 

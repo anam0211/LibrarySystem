@@ -11,8 +11,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.library.common.response.ApiResponse;
@@ -30,15 +32,30 @@ public class VnpayPaymentController {
 
     private final VnpayPaymentService vnpayPaymentService;
 
-    @PostMapping("/memberships/premium")
-    public ApiResponse<Map<String, Object>> createPremiumPayment(
+    @PostMapping({"/memberships/checkout", "/memberships/premium"})
+    public ApiResponse<Map<String, Object>> createMembershipPayment(
+            @RequestParam(required = false) Integer membershipId,
             Authentication authentication,
             HttpServletRequest request
     ) {
-        return ApiResponse.success(vnpayPaymentService.createPremiumPayment(
+        return ApiResponse.success(vnpayPaymentService.createMembershipPayment(
                 authentication.getName(),
+                membershipId,
                 resolveClientIp(request),
-                resolveFrontendReturnUrl(request)));
+                resolveFrontendReturnUrl(request, "/reader/card")));
+    }
+
+    @PostMapping("/fines/{fineId}")
+    public ApiResponse<Map<String, Object>> createFinePayment(
+            @PathVariable Integer fineId,
+            Authentication authentication,
+            HttpServletRequest request
+    ) {
+        return ApiResponse.success(vnpayPaymentService.createFinePayment(
+                authentication.getName(),
+                fineId,
+                resolveClientIp(request),
+                resolveFrontendReturnUrl(request, "/reader/fines")));
     }
 
     @GetMapping("/return")
@@ -74,10 +91,10 @@ public class VnpayPaymentController {
         return request.getRemoteAddr();
     }
 
-    private String resolveFrontendReturnUrl(HttpServletRequest request) {
+    private String resolveFrontendReturnUrl(HttpServletRequest request, String path) {
         String origin = request.getHeader("Origin");
         if (origin != null && !origin.isBlank()) {
-            return origin + "/reader/card";
+            return origin + path;
         }
 
         String referer = request.getHeader("Referer");
@@ -87,7 +104,7 @@ public class VnpayPaymentController {
 
         try {
             URI refererUri = new URI(referer);
-            return refererUri.getScheme() + "://" + refererUri.getAuthority() + "/reader/card";
+            return refererUri.getScheme() + "://" + refererUri.getAuthority() + path;
         } catch (URISyntaxException exception) {
             return null;
         }

@@ -1,25 +1,15 @@
 package com.library.controller;
 
+import com.library.common.response.ApiResponse;
+import com.library.service.CurrentUserService;
+import com.library.service.LoanService;
 import java.util.List;
 import java.util.Map;
-
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
-
-import com.library.common.response.ApiResponse;
-import com.library.dto.request.CheckoutRequestDTO;
-import com.library.dto.request.ReservationRequestDTO;
-import com.library.entity.Loan;
-import com.library.service.LoanService;
-
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/circulation")
@@ -27,87 +17,16 @@ import lombok.RequiredArgsConstructor;
 public class LoanController {
 
     private final LoanService loanService;
-
-    // API: Tạo phiếu mượn (Librarian xác nhận)
-    @PostMapping("/checkout")
-    public ApiResponse<Integer> checkout(
-            @RequestBody CheckoutRequestDTO request,
-            @RequestParam("processorId") Integer processorId) {
-
-        // Ghi chú: Thực tế processorId sẽ được lấy từ JWT Token của người đang đăng
-        // nhập.
-        // Ở đây truyền qua param tạm để bạn dễ test trước khi ghép Spring Security.
-        Loan savedLoan = loanService.checkoutBooks(request, processorId);
-        return ApiResponse.success(savedLoan.getId());
-    }
-
-    // API: Trả sách
-    @PostMapping("/checkout-online/{borrowerId}")
-    public ApiResponse<Integer> checkoutOnline(
-            @PathVariable Integer borrowerId,
-            @RequestBody CheckoutRequestDTO request) {
-
-        Loan savedLoan = loanService.checkoutOnline(request, borrowerId);
-        return ApiResponse.success(savedLoan.getId());
-    }
-
-    @PostMapping("/return/{loanId}/book/{bookId}")
-    public ApiResponse<String> returnBook(
-            @PathVariable Integer loanId,
-            @PathVariable Integer bookId) {
-
-        loanService.returnBook(loanId, bookId);
-        return ApiResponse.success("Đã trả sách thành công và cập nhật lại kho.");
-    }
+    private final CurrentUserService currentUserService;
 
     @GetMapping("/recent")
+    @PreAuthorize("hasAnyRole('ADMIN', 'LIBRARIAN')")
     public ApiResponse<List<Map<String, Object>>> getRecent() {
         return ApiResponse.success(loanService.getRecentTransactions());
     }
 
-    @GetMapping("/history/{userId}")
-    public ApiResponse<List<Map<String, Object>>> getMyHistory(@PathVariable Integer userId) {
-        return ApiResponse.success(loanService.getMyBorrowHistory(userId));
-    }
-
-    @PostMapping("/reserve")
-    public ApiResponse<Integer> reserveBook(@RequestBody ReservationRequestDTO request) {
-        String currentEmail = SecurityContextHolder.getContext().getAuthentication().getName();
-        Loan savedLoan = loanService.reserveBook(
-                currentEmail,
-                request.getBookId(),
-                request.getPickupDate(),
-                request.getDeliveryMethod(),
-                request.getDeliveryAddress(),
-                request.getDeliveryPhone()
-        );
-
-        return ApiResponse.success(savedLoan.getId());
-    }
-
-    @GetMapping("/reservations/pending")
-    public ApiResponse<List<Loan>> getPendingReservations() {
-        return ApiResponse.success(loanService.getPendingReservations());
-    }
-
-    @PutMapping("/reservations/{id}/confirm")
-    public ApiResponse<String> confirmReservation(@PathVariable Integer id) {
-        String librarianEmail = SecurityContextHolder.getContext().getAuthentication().getName();
-        loanService.confirmReservation(id, librarianEmail);
-        return ApiResponse.success("Đã xác nhận phiếu mượn thành công!");
-    }
-
-    @PutMapping("/reservations/{id}/cancel")
-    public ApiResponse<String> cancelReservation(@PathVariable Integer id, @RequestBody Map<String, String> body) {
-        String librarianEmail = SecurityContextHolder.getContext().getAuthentication().getName();
-        String reason = body.getOrDefault("reason", "Không có lý do");
-
-        loanService.cancelReservation(id, librarianEmail, reason);
-        return ApiResponse.success("Đã hủy phiếu mượn thành công và hoàn trả sách vào kho!");
-    }
-    @PutMapping("/{id}/status")
-    public ApiResponse<Integer> updateStatus(@PathVariable Integer id, @RequestBody Map<String, String> body) {
-        Loan savedLoan = loanService.updateStatus(id, body.get("status"));
-        return ApiResponse.success(savedLoan.getId());
+    @GetMapping("/history/me")
+    public ApiResponse<List<Map<String, Object>>> getMyHistory() {
+        return ApiResponse.success(loanService.getMyBorrowHistory(currentUserService.getCurrentUserId()));
     }
 }

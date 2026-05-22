@@ -5,6 +5,7 @@ public enum LoanStatus {
     PREPARING,
     SHIPPING,
     OPEN,
+    OVERDUE,
     RETURNING,
     CLOSED,
     CANCELLED,

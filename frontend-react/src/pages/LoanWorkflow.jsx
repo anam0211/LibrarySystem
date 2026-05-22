@@ -6,15 +6,19 @@ import {
   ShopOutlined
 } from "@ant-design/icons";
 import {
+  Alert,
   Button,
   Card,
   Col,
   Descriptions,
   Drawer,
   Empty,
+  Form,
   Input,
   List,
+  Modal,
   Row,
+  Select,
   Space,
   Table,
   Tabs,
@@ -113,6 +117,53 @@ function bookCountText(loan) {
   return `${count} cuốn`;
 }
 
+function copyCodeText(book) {
+  return book?.copyBarcode || (book?.copyId ? `COPY-${book.copyId}` : "Chưa gán bản sao");
+}
+
+function readerCodeText(loan) {
+  return loan?.readerCardCode || loan?.studentCode || (loan?.userId ? `LIB-USER-${loan.userId}` : "-");
+}
+
+function priorityReaderCode(loan) {
+  const priority = Boolean(loan?.priorityProcessing);
+  return (
+    <Typography.Text
+      type={priority ? undefined : "secondary"}
+      style={{ fontSize: 12, color: priority ? "#d48806" : undefined, fontWeight: priority ? 700 : 400 }}
+    >
+      {readerCodeText(loan)}
+    </Typography.Text>
+  );
+}
+
+function overdueDaysText(dueDate) {
+  const due = getDateOnly(dueDate);
+  if (!due) {
+    return "không rõ số ngày";
+  }
+
+  const diffDays = Math.max(1, Math.ceil((startOfToday() - due) / 86400000));
+  return `${diffDays} ngày`;
+}
+
+function estimateReturnFine(order, conditions = []) {
+  const books = Array.isArray(order?.books) && order.books.length ? order.books : [{}];
+  const overdue = order?.deliveryStatus === "OVERDUE" || isOverdue(order?.dueDate);
+  const lateFine = overdue ? books.length * 10000 : 0;
+  const conditionFine = conditions.reduce((sum, condition) => {
+    if (condition === "DAMAGED") {
+      return sum + 50000;
+    }
+    if (condition === "LOST") {
+      return sum + 100000;
+    }
+    return sum;
+  }, 0);
+
+  return lateFine + conditionFine;
+}
+
 function getDeliveryStatus(loan, overrides = {}) {
   const overridden = overrides[loan.id];
   if (overridden) {
@@ -138,7 +189,8 @@ function matchesDeliveryKeyword(loan, keyword) {
     loan.phone,
     loan.address,
     loan.bookTitle,
-    ...(Array.isArray(loan.books) ? loan.books.map((book) => book.title) : [])
+    ...(Array.isArray(loan.books) ? loan.books.map((book) => book.title) : []),
+    ...(Array.isArray(loan.books) ? loan.books.map((book) => book.copyBarcode || book.copyId) : [])
   ]
     .filter(Boolean)
     .some((value) => String(value).toLowerCase().includes(normalizedKeyword));
@@ -281,11 +333,22 @@ function DeliveryTable({ orders, query, total, onQueryChange, onOpenDetails }) {
       dataIndex: "readerName",
       width: 142,
       ellipsis: true,
-      sorter: true
+      sorter: true,
+      render: (value, record) => (
+        <Space direction="vertical" size={0}>
+          <Typography.Text>{value}</Typography.Text>
+          {priorityReaderCode(record)}
+        </Space>
+      )
+    },
+    {
+      title: "Số cuốn",
+      width: 92,
+      render: (_, record) => bookCountText(record)
     },
     {
       title: "Ngày mượn",
-      dataIndex: "createdAt",
+      dataIndex: "loanedAt",
       width: 106,
       sorter: true,
       render: formatDate
@@ -346,9 +409,16 @@ function DeliveryTable({ orders, query, total, onQueryChange, onOpenDetails }) {
   );
 }
 
-function DeliveryDetailDrawer({ order, open, onClose, onAction, showActions = true }) {
+function DeliveryDetailDrawer({ order, fines = [], open, onClose, onAction, showActions = true }) {
   const books = Array.isArray(order?.books) ? order.books : [];
-  const fineAmount = order?.deliveryStatus === "OVERDUE" ? 50000 : 0;
+  const orderFines = order
+    ? fines.filter((fine) => String(fine.loanId || "") === String(order.id || ""))
+    : [];
+  const unpaidFineAmount = orderFines
+    .filter((fine) => fine.status === "UNPAID")
+    .reduce((sum, fine) => sum + Number(fine.amount || 0), 0);
+  const totalFineAmount = orderFines.reduce((sum, fine) => sum + Number(fine.amount || 0), 0);
+  const fineAmount = unpaidFineAmount || totalFineAmount;
   const depositAmount = Number(order?.depositAmount || order?.deposit || 0);
 
   const actions = {
@@ -388,22 +458,43 @@ function DeliveryDetailDrawer({ order, open, onClose, onAction, showActions = tr
               <StatusBadge status={order.deliveryStatus} />
             </Descriptions.Item>
             <Descriptions.Item label="Bạn đọc">{order.readerName}</Descriptions.Item>
+            <Descriptions.Item label="Mã thư viện">{priorityReaderCode(order)}</Descriptions.Item>
             <Descriptions.Item label="Số điện thoại">{order.phone || "Chưa cập nhật"}</Descriptions.Item>
             <Descriptions.Item label="Địa chỉ giao">{order.address || "Chưa cập nhật"}</Descriptions.Item>
             <Descriptions.Item label="Số sách">{bookCountText(order)}</Descriptions.Item>
-            <Descriptions.Item label="Ngày mượn">{formatDate(order.createdAt)}</Descriptions.Item>
+            <Descriptions.Item label="Ngày mượn">{formatDate(order.loanedAt)}</Descriptions.Item>
             <Descriptions.Item label="Hạn trả">{formatDate(order.dueDate)}</Descriptions.Item>
             <Descriptions.Item label="Tiền cọc">{depositAmount ? formatCurrency(depositAmount) : "Không có"}</Descriptions.Item>
             <Descriptions.Item label="Phí phạt">{fineAmount ? formatCurrency(fineAmount) : "Chưa phát sinh"}</Descriptions.Item>
           </Descriptions>
 
           <Card size="small" title="Danh sách sách trong đơn">
+            {orderFines.length ? (
+              <List
+                header={<Typography.Text strong>Phiếu phạt</Typography.Text>}
+                dataSource={orderFines}
+                renderItem={(fine) => (
+                  <List.Item>
+                    <Space direction="vertical" size={0}>
+                      <Typography.Text strong>{formatCurrency(fine.amount)}</Typography.Text>
+                      <Typography.Text type="secondary">
+                        {fine.reason} / {fine.status === "UNPAID" ? "Chưa thanh toán" : "Đã thanh toán"}
+                        {fine.copyBarcode ? ` / Mã bản sao: ${fine.copyBarcode}` : ""}
+                      </Typography.Text>
+                    </Space>
+                  </List.Item>
+                )}
+              />
+            ) : null}
             {books.length ? (
               <List
                 dataSource={books}
                 renderItem={(book, index) => (
                   <List.Item>
-                    <Typography.Text>{index + 1}. {book.title || "Sách không tên"}</Typography.Text>
+                    <Space direction="vertical" size={0}>
+                      <Typography.Text>{index + 1}. {book.title || "Sách không tên"}</Typography.Text>
+                      <Typography.Text type="secondary">Mã bản sao: {copyCodeText(book)}</Typography.Text>
+                    </Space>
                   </List.Item>
                 )}
               />
@@ -452,12 +543,99 @@ function DeliveryDetailDrawer({ order, open, onClose, onAction, showActions = tr
   );
 }
 
+function ReturnConfirmModal({ order, open, onCancel, onSubmit }) {
+  const [form] = Form.useForm();
+  const [submitting, setSubmitting] = useState(false);
+  const books = Array.isArray(order?.books) && order.books.length ? order.books : [];
+  const watchedConditions = Form.useWatch("bookConditions", form) || [];
+  const overdue = order?.deliveryStatus === "OVERDUE" || isOverdue(order?.dueDate);
+  const estimatedFine = estimateReturnFine(order, watchedConditions);
+
+  useEffect(() => {
+    if (open && order) {
+      const count = books.length || 1;
+      form.setFieldsValue({
+        bookConditions: Array.from({ length: count }, () => "OK")
+      });
+    }
+  }, [open, order?.id]);
+
+  async function handleFinish(values) {
+    setSubmitting(true);
+    try {
+      await onSubmit(order, values.bookConditions || []);
+      form.resetFields();
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Modal
+      open={open}
+      title={order ? `Xác nhận trả sách #${order.id}` : "Xác nhận trả sách"}
+      okText="Xác nhận trả"
+      cancelText="Hủy"
+      confirmLoading={submitting}
+      onCancel={onCancel}
+      onOk={() => form.submit()}
+      width={640}
+    >
+      {order ? (
+        <Space direction="vertical" size={14} style={{ width: "100%" }}>
+          {overdue ? (
+            <Alert
+              type="error"
+              showIcon
+              message={`Đơn đã quá hạn ${overdueDaysText(order.dueDate)}`}
+              description="Khi xác nhận trả, hệ thống sẽ tự tạo phiếu phạt LATE_RETURN cho từng cuốn quá hạn."
+            />
+          ) : (
+            <Alert type="success" showIcon message="Đơn chưa quá hạn trả." />
+          )}
+
+          <Descriptions bordered size="small" column={1}>
+            <Descriptions.Item label="Bạn đọc">{order.readerName}</Descriptions.Item>
+            <Descriptions.Item label="Mã thư viện">{priorityReaderCode(order)}</Descriptions.Item>
+            <Descriptions.Item label="Hạn trả">{formatDate(order.dueDate)}</Descriptions.Item>
+            <Descriptions.Item label="Phạt dự kiến">
+              {estimatedFine ? <Tag color="red">{formatCurrency(estimatedFine)}</Tag> : "Chưa phát sinh"}
+            </Descriptions.Item>
+          </Descriptions>
+
+          <Form form={form} layout="vertical" onFinish={handleFinish}>
+            {(books.length ? books : [{ title: order.bookTitle || "Sách" }]).map((book, index) => (
+              <Form.Item
+                key={`${book.id || book.title}-${index}`}
+                name={["bookConditions", index]}
+                label={`${index + 1}. ${book.title || "Sách không tên"} - Mã bản sao: ${copyCodeText(book)}`}
+                rules={[{ required: true, message: "Chọn tình trạng sách." }]}
+              >
+                <Select
+                  options={[
+                    { value: "OK", label: "Bình thường" },
+                    { value: "DAMAGED", label: "Hư hỏng (+50.000)" },
+                    { value: "LOST", label: "Mất sách (+100.000)" }
+                  ]}
+                />
+              </Form.Item>
+            ))}
+          </Form>
+        </Space>
+      ) : null}
+    </Modal>
+  );
+}
+
 function DeliveryPage() {
+  const [messageApi, messageContextHolder] = message.useMessage();
   const [loans, setLoans] = useState([]);
+  const [fines, setFines] = useState([]);
   const [statusOverrides, setStatusOverrides] = useState({});
   const [keyword, setKeyword] = useState("");
   const [activeStatus, setActiveStatus] = useState("ALL");
   const [selectedId, setSelectedId] = useState(null);
+  const [returnOrder, setReturnOrder] = useState(null);
   const [query, setQuery] = useState({
     page: 1,
     limit: 10,
@@ -466,8 +644,12 @@ function DeliveryPage() {
   });
 
   async function refresh() {
-    const nextLoans = await libraryGateway.listLoans();
+    const [nextLoans, nextFines] = await Promise.all([
+      libraryGateway.listLoans(),
+      libraryGateway.listFines()
+    ]);
     setLoans(nextLoans);
+    setFines(nextFines);
   }
 
   useEffect(() => {
@@ -528,18 +710,28 @@ function DeliveryPage() {
 
   async function handleAction(order, nextStatus) {
     if (nextStatus === "REMIND") {
-      message.success(`Đã gửi nhắc trả cho đơn ${order.id}.`);
+      try {
+        await libraryGateway.sendReturnReminder(order.id);
+        messageApi.success(`Đã gửi nhắc trả cho đơn ${order.id}.`);
+      } catch (error) {
+        messageApi.error(error?.message || "Không thể gửi nhắc trả.");
+      }
+      return;
+    }
+
+    if (nextStatus === "RETURNED" || (nextStatus === "RECEIVED" && ["RETURNING", "OVERDUE"].includes(order.deliveryStatus))) {
+      setReturnOrder(order);
       return;
     }
 
     if (nextStatus === "FINE") {
-      message.info("Vui lòng tạo phiếu phạt ở mục Thu phạt.");
+      messageApi.info("Vui lòng tạo phiếu phạt ở mục Thu phạt.");
       return;
     }
 
     if (["RECEIVED", "CHECKING"].includes(nextStatus)) {
       setStatusOverrides((current) => ({ ...current, [order.id]: nextStatus }));
-      message.success(`Đã chuyển đơn ${order.id} sang ${DELIVERY_STATUS_LABELS[nextStatus]}.`);
+      messageApi.success(`Đã chuyển đơn ${order.id} sang ${DELIVERY_STATUS_LABELS[nextStatus]}.`);
       return;
     }
 
@@ -547,17 +739,31 @@ function DeliveryPage() {
       await libraryGateway.moveLoan(order.id, nextStatus);
       setStatusOverrides((current) => ({ ...current, [order.id]: nextStatus }));
       await refresh();
-      message.success(`Đã chuyển đơn ${order.id} sang ${DELIVERY_STATUS_LABELS[nextStatus]}.`);
+      messageApi.success(`Đã chuyển đơn ${order.id} sang ${DELIVERY_STATUS_LABELS[nextStatus]}.`);
       if (nextStatus === "RETURNED" || nextStatus === "CANCELLED") {
         setSelectedId(null);
       }
     } catch (error) {
-      message.error(error?.message || "Không thể cập nhật trạng thái đơn.");
+      messageApi.error(error?.message || "Không thể cập nhật trạng thái đơn.");
+    }
+  }
+
+  async function handleConfirmReturn(order, bookConditions) {
+    try {
+      await libraryGateway.confirmReturn(order.id, bookConditions);
+      messageApi.success("Đã xác nhận trả sách. Phiếu phạt quá hạn/hư/mất sẽ được tạo tự động nếu có.");
+      setReturnOrder(null);
+      setSelectedId(null);
+      await refresh();
+    } catch (error) {
+      messageApi.error(error?.message || "Không thể xác nhận trả sách.");
+      throw error;
     }
   }
 
   return (
     <div className="page-shell delivery-page">
+      {messageContextHolder}
       <PageHeader
         eyebrow="Điều phối giao sách"
         title="Giao tận nhà"
@@ -585,9 +791,16 @@ function DeliveryPage() {
 
       <DeliveryDetailDrawer
         order={selectedOrder}
+        fines={fines}
         open={Boolean(selectedOrder)}
         onClose={() => setSelectedId(null)}
         onAction={handleAction}
+      />
+      <ReturnConfirmModal
+        order={returnOrder}
+        open={Boolean(returnOrder)}
+        onCancel={() => setReturnOrder(null)}
+        onSubmit={handleConfirmReturn}
       />
     </div>
   );
@@ -595,12 +808,18 @@ function DeliveryPage() {
 
 function PickupPage() {
   const [loans, setLoans] = useState([]);
+  const [fines, setFines] = useState([]);
   const [keyword, setKeyword] = useState("");
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [returnOrder, setReturnOrder] = useState(null);
 
   async function refresh() {
-    const nextLoans = await libraryGateway.listLoans();
+    const [nextLoans, nextFines] = await Promise.all([
+      libraryGateway.listLoans(),
+      libraryGateway.listFines()
+    ]);
     setLoans(nextLoans);
+    setFines(nextFines);
   }
 
   useEffect(() => {
@@ -614,6 +833,19 @@ function PickupPage() {
       message.success(`Đã chuyển đơn ${loanId} sang ${title}.`);
     } catch (error) {
       message.error(error?.message || "Không thể cập nhật trạng thái đơn.");
+    }
+  }
+
+  async function handleConfirmReturn(order, bookConditions) {
+    try {
+      await libraryGateway.confirmReturn(order.id, bookConditions);
+      message.success("Đã xác nhận trả sách. Phiếu phạt quá hạn/hư/mất sẽ được tạo tự động nếu có.");
+      setReturnOrder(null);
+      setSelectedOrder(null);
+      await refresh();
+    } catch (error) {
+      message.error(error?.message || "Không thể xác nhận trả sách.");
+      throw error;
     }
   }
 
@@ -635,9 +867,19 @@ function PickupPage() {
       width: 110,
       render: (value, record) => <Tag color={record.deliveryStatus === "OVERDUE" ? "red" : "blue"}>{value}</Tag>
     },
-    { title: "Bạn đọc", dataIndex: "readerName", width: 180 },
+    {
+      title: "Bạn đọc",
+      dataIndex: "readerName",
+      width: 190,
+      render: (value, record) => (
+        <Space direction="vertical" size={0}>
+          <Typography.Text>{value}</Typography.Text>
+          {priorityReaderCode(record)}
+        </Space>
+      )
+    },
     { title: "Số sách", width: 100, render: (_, record) => bookCountText(record) },
-    { title: "Ngày mượn", dataIndex: "createdAt", width: 130, render: formatDate },
+    { title: "Ngày mượn", dataIndex: "loanedAt", width: 130, render: formatDate },
     { title: "Hạn trả", dataIndex: "dueDate", width: 130, render: formatDate },
     { title: "Trạng thái", dataIndex: "deliveryStatus", width: 150, render: (status) => <StatusBadge status={status} /> },
     {
@@ -651,8 +893,8 @@ function PickupPage() {
               Xác nhận
             </Button>
           ) : record.status === "BORROWING" || record.deliveryStatus === "OVERDUE" ? (
-            <Button type="primary" onClick={() => handleStatusChange(record.id, "RETURNED", "Đã trả")}>
-              Đã trả
+            <Button type="primary" onClick={() => setReturnOrder(record)}>
+              Xác nhận trả
             </Button>
           ) : null}
         </Space>
@@ -683,10 +925,17 @@ function PickupPage() {
 
       <DeliveryDetailDrawer
         order={selectedOrder}
+        fines={fines}
         open={Boolean(selectedOrder)}
         onClose={() => setSelectedOrder(null)}
         onAction={(order, nextStatus) => handleStatusChange(order.id, nextStatus, DELIVERY_STATUS_LABELS[nextStatus])}
         showActions={false}
+      />
+      <ReturnConfirmModal
+        order={returnOrder}
+        open={Boolean(returnOrder)}
+        onCancel={() => setReturnOrder(null)}
+        onSubmit={handleConfirmReturn}
       />
     </div>
   );

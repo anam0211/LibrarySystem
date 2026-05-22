@@ -16,8 +16,10 @@ import com.library.common.response.ApiResponse;
 import com.library.dto.request.ConfirmReturnRequestDTO;
 import com.library.dto.request.LoanStatusUpdateRequestDTO;
 import com.library.dto.response.AdminLoanKanbanResponseDTO;
+import com.library.dto.response.NotificationResponseDTO;
 import com.library.entity.Loan;
 import com.library.service.LoanService;
+import com.library.service.NotificationService;
 
 import lombok.RequiredArgsConstructor;
 
@@ -28,6 +30,7 @@ import lombok.RequiredArgsConstructor;
 public class AdminLoanController {
 
     private final LoanService loanService;
+    private final NotificationService notificationService;
 
     @GetMapping("/kanban")
     public ApiResponse<List<AdminLoanKanbanResponseDTO>> kanban() {
@@ -50,6 +53,11 @@ public class AdminLoanController {
     ) {
         Loan loan = loanService.confirmReturn(id, request, currentUserEmail());
         return ApiResponse.success(loan.getId());
+    }
+
+    @PostMapping("/{id}/return-reminder")
+    public ApiResponse<NotificationResponseDTO> sendReturnReminder(@PathVariable Integer id) {
+        return ApiResponse.success(notificationService.sendReturnReminder(id));
     }
 
     private String currentUserEmail() {

@@ -29,7 +29,7 @@ public class DatabaseConstraintInitializer implements ApplicationRunner {
                 "loans",
                 "status",
                 "CK_loans_status",
-                List.of("PENDING", "PREPARING", "SHIPPING", "OPEN", "RETURNING", "CLOSED", "CANCELLED", "EXPIRED"));
+                List.of("PENDING", "PREPARING", "SHIPPING", "OPEN", "OVERDUE", "RETURNING", "CLOSED", "CANCELLED", "EXPIRED"));
         syncCheckConstraint(
                 "loans",
                 "delivery_method",
@@ -45,6 +45,8 @@ public class DatabaseConstraintInitializer implements ApplicationRunner {
                 "type",
                 "CK_notifications_type",
                 List.of("LOAN_STATUS", "DUE_SOON", "OVERDUE", "FINE_CREATED", "GENERIC"));
+        dropUniqueConstraint("loan_items", "UQ_loan_items_loan_book");
+        dropCheckConstraints("memberships", "code");
     }
 
     private void syncCheckConstraint(String table, String column, String constraintName, List<String> allowedValues) {
@@ -59,6 +61,42 @@ public class DatabaseConstraintInitializer implements ApplicationRunner {
                         + " WITH CHECK ADD CONSTRAINT " + quote(constraintName)
                         + " CHECK (" + quote(column) + " IN (" + toSqlStringList(allowedValues) + "))");
         log.info("Synchronized SQL Server check constraint {} on {}.{}", constraintName, objectName, column);
+    }
+
+    private void dropCheckConstraints(String table, String column) {
+        String objectName = SCHEMA + "." + table;
+        if (!tableExists(objectName)) {
+            return;
+        }
+
+        dropExistingCheckConstraints(objectName, column);
+        log.info("Dropped SQL Server check constraints on {}.{}", objectName, column);
+    }
+
+    private void dropUniqueConstraint(String table, String constraintName) {
+        String objectName = SCHEMA + "." + table;
+        if (!tableExists(objectName)) {
+            return;
+        }
+
+        Integer exists = jdbcTemplate.queryForObject(
+                """
+                SELECT CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM sys.key_constraints
+                    WHERE parent_object_id = OBJECT_ID(?)
+                      AND name = ?
+                ) THEN 1 ELSE 0 END
+                """,
+                Integer.class,
+                objectName,
+                constraintName);
+
+        if (exists != null && exists == 1) {
+            jdbcTemplate.execute("ALTER TABLE " + quote(SCHEMA) + "." + quote(table)
+                    + " DROP CONSTRAINT " + quote(constraintName));
+            log.info("Dropped SQL Server unique constraint {} on {}", constraintName, objectName);
+        }
     }
 
     private boolean tableExists(String objectName) {

@@ -46,8 +46,7 @@ export default function Notifications() {
     setLoading(true);
 
     try {
-      const currentUser = await libraryApi.users.me();
-      const data = await libraryApi.notifications.list(currentUser.id);
+      const data = await libraryApi.notifications.mine();
       setNotifications(Array.isArray(data) ? data : []);
     } catch (error) {
       message.error(error.message);
@@ -62,7 +61,7 @@ export default function Notifications() {
 
   async function handleMarkAsRead(item) {
     try {
-      await libraryApi.notifications.markAsRead(item.notificationId);
+      await libraryApi.notifications.markMineAsRead(item.notificationId);
       message.success("Đã đánh dấu đã đọc.");
       window.dispatchEvent(new Event("notificationUpdated"));
       loadNotifications();
@@ -78,7 +77,7 @@ export default function Notifications() {
     setLoading(true);
     try {
       // Gọi API đánh dấu đã đọc cho tất cả các thông báo chưa đọc cùng lúc
-      await Promise.all(unreadNotifs.map((item) => libraryApi.notifications.markAsRead(item.notificationId)));
+      await Promise.all(unreadNotifs.map((item) => libraryApi.notifications.markMineAsRead(item.notificationId)));
       message.success("Đã đánh dấu tất cả là đã đọc.");
       window.dispatchEvent(new Event("notificationUpdated"));
       loadNotifications();

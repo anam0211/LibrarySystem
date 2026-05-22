@@ -15,14 +15,17 @@ export function formatDate(value) {
     return "-";
   }
 
-  const date = new Date(value);
+  const text = String(value);
+  const date = new Date(text.includes("T") ? text : `${text}T00:00:00`);
 
   if (Number.isNaN(date.getTime())) {
     return String(value);
   }
 
   return new Intl.DateTimeFormat("vi-VN", {
-    dateStyle: "short"
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric"
   }).format(date);
 }
 
@@ -38,8 +41,11 @@ export function formatDateTime(value) {
   }
 
   return new Intl.DateTimeFormat("vi-VN", {
-    dateStyle: "short",
-    timeStyle: "short"
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
   }).format(date);
 }
 

@@ -39,6 +39,9 @@ public class CartItem {
     @JoinColumn(name = "book_id", nullable = false)
     private Book book;
 
+    @Column(name = "quantity", nullable = false)
+    private Integer quantity = 1;
+
     @CreationTimestamp
     @Column(name = "added_at", nullable = false, updatable = false)
     private LocalDateTime addedAt;

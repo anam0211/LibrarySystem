@@ -1,6 +1,7 @@
 package com.library.service;
 
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -12,12 +13,13 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.springframework.data.domain.Sort;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.library.common.exception.BadRequestException;
 import com.library.common.exception.ResourceNotFoundException;
-import com.library.dto.request.CheckoutRequestDTO;
 import com.library.dto.request.ConfirmReturnRequestDTO;
 import com.library.dto.request.LoanCheckoutRequestDTO;
 import com.library.dto.request.LoanStatusUpdateRequestDTO;
@@ -25,8 +27,11 @@ import com.library.dto.response.AdminLoanKanbanResponseDTO;
 import com.library.dto.response.LoanTrackingItemResponseDTO;
 import com.library.dto.response.LoanTrackingResponseDTO;
 import com.library.entity.Book;
+import com.library.entity.BookCopy;
+import com.library.entity.BookCopyCondition;
 import com.library.entity.BookStatus;
 import com.library.entity.DeliveryMethod;
+import com.library.entity.FineReason;
 import com.library.entity.Loan;
 import com.library.entity.LoanItem;
 import com.library.entity.LoanItemStatus;
@@ -51,6 +56,7 @@ public class LoanService {
             LoanStatus.PREPARING,
             LoanStatus.SHIPPING,
             LoanStatus.OPEN,
+            LoanStatus.OVERDUE,
             LoanStatus.RETURNING,
             LoanStatus.CLOSED
     );
@@ -68,64 +74,11 @@ public class LoanService {
     private final BookRepository bookRepository;
     private final UserRepository userRepository;
     private final NotificationService notificationService;
+    private final FineService fineService;
+    private final BookCopyService bookCopyService;
 
-    @Transactional
-    public Loan checkoutBooks(CheckoutRequestDTO request, Integer processedById) {
-        User borrower = findUserById(request.getBorrowerId(), "Khong tim thay nguoi dung.");
-        User processor = findUserById(processedById, "Khong tim thay nguoi xu ly.");
-        DeliveryMethod deliveryMethod = resolveDeliveryMethod(request.getDeliveryMethod());
-        validateDeliveryDetails(deliveryMethod, request.getDeliveryAddress(), request.getDeliveryPhone());
-
-        int totalQty = request.getItems() != null ? request.getItems().stream().mapToInt(item -> item.getQty() != null ? item.getQty() : 1).sum() : 0;
-        checkMembershipBorrowLimit(borrower, totalQty);
-
-        LocalDateTime loanedAt = LocalDateTime.now();
-        LocalDateTime dueAt = loanedAt.plusDays(resolveDueDays(request.getDueDays()));
-
-        Loan loan = Loan.builder()
-                .borrower(borrower)
-                .processedBy(processor)
-                .status(LoanStatus.OPEN)
-                .deliveryMethod(deliveryMethod)
-                .deliveryAddress(isHomeDelivery(deliveryMethod) ? normalizeText(request.getDeliveryAddress()) : null)
-                .deliveryPhone(normalizeText(request.getDeliveryPhone()))
-                .trackingCode(normalizeText(request.getTrackingCode()))
-                .loanedAt(loanedAt)
-                .dueAt(dueAt)
-                .build();
-
-        addLoanItemsFromCheckoutRequest(loan, request, LoanItemStatus.BORROWED, loanedAt, dueAt);
-        Loan savedLoan = loanRepository.save(loan);
-        notificationService.notifyLoanStatus(savedLoan);
-        return savedLoan;
-    }
-
-    @Transactional
-    public Loan checkoutOnline(CheckoutRequestDTO request, Integer borrowerId) {
-        User borrower = findUserById(borrowerId, "Khong tim thay nguoi dung.");
-        ensureBorrowerVerified(borrower);
-
-        DeliveryMethod deliveryMethod = resolveDeliveryMethod(request.getDeliveryMethod());
-        validateDeliveryDetails(deliveryMethod, request.getDeliveryAddress(), request.getDeliveryPhone());
-
-        int totalQty = request.getItems() != null ? request.getItems().stream().mapToInt(item -> item.getQty() != null ? item.getQty() : 1).sum() : 0;
-        checkMembershipBorrowLimit(borrower, totalQty);
-
-        Loan loan = Loan.builder()
-                .borrower(borrower)
-                .status(LoanStatus.PENDING)
-                .deliveryMethod(deliveryMethod)
-                .deliveryAddress(isHomeDelivery(deliveryMethod) ? normalizeText(request.getDeliveryAddress()) : null)
-                .deliveryPhone(normalizeText(request.getDeliveryPhone()))
-                .trackingCode(normalizeText(request.getTrackingCode()))
-                .note("Reader created online loan.")
-                .build();
-
-        addLoanItemsFromCheckoutRequest(loan, request, LoanItemStatus.PENDING, null, null);
-        Loan savedLoan = loanRepository.save(loan);
-        notificationService.notifyLoanStatus(savedLoan);
-        return savedLoan;
-    }
+    @Value("${app.loans.pending-expire-hours:24}")
+    private long pendingExpireHours;
 
     @Transactional
     public Loan checkoutForCurrentUser(LoanCheckoutRequestDTO request, String borrowerEmail) {
@@ -135,7 +88,7 @@ public class LoanService {
         DeliveryMethod deliveryMethod = resolveDeliveryMethod(request.getDeliveryMethod());
         validateDeliveryDetails(deliveryMethod, request.getAddress(), request.getPhone());
 
-        int totalQty = request.getBookIds() != null ? request.getBookIds().size() : 0;
+        int totalQty = countCheckoutQuantity(request);
         checkMembershipBorrowLimit(borrower, totalQty);
 
         Loan loan = Loan.builder()
@@ -147,37 +100,10 @@ public class LoanService {
                 .note("User checkout request.")
                 .build();
 
-        addLoanItemsFromBookIds(loan, request.getBookIds(), LoanItemStatus.PENDING, null, null);
+        addLoanItemsFromReaderRequest(loan, request, LoanItemStatus.PENDING, null, null);
         Loan savedLoan = loanRepository.save(loan);
         notificationService.notifyLoanStatus(savedLoan);
         return savedLoan;
-    }
-
-    @Transactional
-    public void returnBook(Integer loanId, Integer bookId) {
-        Loan loan = findLoanById(loanId);
-
-        LoanItem itemToReturn = loan.getLoanItems().stream()
-                .filter(item -> item.getBook().getId().equals(bookId) && item.getStatus() == LoanItemStatus.BORROWED)
-                .findFirst()
-                .orElseThrow(() -> new BadRequestException("Sach khong nam trong phieu muon hoac da duoc xu ly."));
-
-        itemToReturn.setStatus(LoanItemStatus.RETURNED);
-        itemToReturn.setReturnedAt(LocalDateTime.now());
-        incrementStock(itemToReturn.getBook());
-
-        boolean allProcessed = loan.getLoanItems().stream()
-                .noneMatch(item -> RETURNABLE_ITEM_STATUSES.contains(item.getStatus()));
-
-        if (allProcessed) {
-            loan.setStatus(LoanStatus.CLOSED);
-            loan.setClosedAt(LocalDateTime.now());
-        }
-
-        Loan savedLoan = loanRepository.save(loan);
-        if (allProcessed) {
-            notificationService.notifyLoanStatus(savedLoan);
-        }
     }
 
     @Transactional(readOnly = true)
@@ -201,6 +127,8 @@ public class LoanService {
                     map.put("deliveryAddress", loan.getDeliveryAddress());
                     map.put("deliveryPhone", loan.getDeliveryPhone());
                     map.put("trackingCode", loan.getTrackingCode());
+                    map.put("createdAt", loan.getCreatedAt());
+                    map.put("loanedAt", displayLoanedAt(loan));
                     map.put("dueDate", toDateString(loan.getDueAt()));
                     return map;
                 })
@@ -219,103 +147,19 @@ public class LoanService {
                     map.put("deliveryAddress", loan.getDeliveryAddress());
                     map.put("deliveryPhone", loan.getDeliveryPhone());
                     map.put("trackingCode", loan.getTrackingCode());
+                    map.put("createdAt", loan.getCreatedAt());
+                    map.put("loanedAt", displayLoanedAt(loan));
                     map.put("dueDate", toDateString(loan.getDueAt()));
                     map.put("items", loan.getLoanItems().stream().map(item -> {
                         Map<String, Object> itemMap = new HashMap<>();
                         itemMap.put("bookTitle", item.getBook().getTitle());
                         itemMap.put("itemStatus", item.getStatus().name());
+                        itemMap.put("borrowedAt", item.getBorrowedAt());
                         return itemMap;
                     }).toList());
                     return map;
                 })
                 .toList();
-    }
-
-    @Transactional
-    public Loan reserveBook(
-            String borrowerEmail,
-            Integer bookId,
-            String pickupDate,
-            String deliveryMethodValue,
-            String deliveryAddress,
-            String deliveryPhone
-    ) {
-        User borrower = findUserByEmail(borrowerEmail, "Khong tim thay nguoi dung.");
-        ensureBorrowerVerified(borrower);
-
-        DeliveryMethod deliveryMethod = resolveDeliveryMethod(deliveryMethodValue);
-        validateDeliveryDetails(deliveryMethod, deliveryAddress, deliveryPhone);
-
-        checkMembershipBorrowLimit(borrower, 1);
-
-        Loan loan = Loan.builder()
-                .borrower(borrower)
-                .status(LoanStatus.PENDING)
-                .deliveryMethod(deliveryMethod)
-                .deliveryAddress(isHomeDelivery(deliveryMethod) ? normalizeText(deliveryAddress) : null)
-                .deliveryPhone(normalizeText(deliveryPhone))
-                .note(buildReservationNote(pickupDate))
-                .build();
-
-        addLoanItemsFromBookIds(loan, List.of(bookId), LoanItemStatus.PENDING, null, null);
-        Loan savedLoan = loanRepository.save(loan);
-        notificationService.notifyLoanStatus(savedLoan);
-        return savedLoan;
-    }
-
-    @Transactional(readOnly = true)
-    public List<Loan> getPendingReservations() {
-        return loanRepository.findByProcessedByIsNullOrderByCreatedAtDesc();
-    }
-
-    @Transactional
-    public Loan confirmReservation(Integer loanId, String librarianEmail) {
-        User librarian = findUserByEmail(librarianEmail, "Khong tim thay tai khoan thu thu.");
-        Loan loan = findLoanById(loanId);
-
-        if (loan.getProcessedBy() != null) {
-            throw new BadRequestException("Phieu nay da duoc xu ly boi nguoi khac.");
-        }
-
-        loan.setProcessedBy(librarian);
-        loan.setStatus(LoanStatus.PREPARING);
-        appendNote(loan, "Reservation confirmed.");
-        Loan savedLoan = loanRepository.save(loan);
-        notificationService.notifyLoanStatus(savedLoan);
-        return savedLoan;
-    }
-
-    @Transactional
-    public Loan cancelReservation(Integer loanId, String librarianEmail, String reason) {
-        User librarian = findUserByEmail(librarianEmail, "Khong tim thay tai khoan thu thu.");
-        Loan loan = findLoanById(loanId);
-
-        if (loan.getProcessedBy() != null) {
-            throw new BadRequestException("Phieu nay da duoc xu ly, khong the huy.");
-        }
-
-        loan.setProcessedBy(librarian);
-        loan.setStatus(LoanStatus.CANCELLED);
-        loan.setClosedAt(LocalDateTime.now());
-        appendNote(loan, "Cancelled: " + normalizeText(reason));
-        releaseReservedStock(loan, LocalDateTime.now());
-        Loan savedLoan = loanRepository.save(loan);
-        notificationService.notifyLoanStatus(savedLoan);
-        return savedLoan;
-    }
-
-    @Transactional
-    public Loan updateStatus(Integer loanId, String statusValue) {
-        Loan loan = findLoanById(loanId);
-        LoanStatus newStatus = resolveLoanStatus(statusValue);
-        LoanStatus oldStatus = loan.getStatus();
-        validateStatusTransition(loan, newStatus);
-        applyStatusChange(loan, newStatus, null);
-        Loan savedLoan = loanRepository.save(loan);
-        if (oldStatus != newStatus) {
-            notificationService.notifyLoanStatus(savedLoan);
-        }
-        return savedLoan;
     }
 
     @Transactional(readOnly = true)
@@ -370,12 +214,8 @@ public class LoanService {
         Loan loan = findLoanById(loanId);
         ensureLoanOwner(loan, borrowerEmail);
 
-        if (!isHomeDelivery(loan.getDeliveryMethod())) {
-            throw new BadRequestException("Don nhan tai quay se duoc thu thu xac nhan tra sach truc tiep.");
-        }
-
-        if (loan.getStatus() != LoanStatus.OPEN) {
-            throw new BadRequestException("Chi co the yeu cau tra sach khi don dang o trang thai OPEN.");
+        if (loan.getStatus() != LoanStatus.OPEN && loan.getStatus() != LoanStatus.OVERDUE) {
+            throw new BadRequestException("Chi co the yeu cau tra sach khi don dang o trang thai OPEN hoac OVERDUE.");
         }
 
         loan.setStatus(LoanStatus.RETURNING);
@@ -394,8 +234,8 @@ public class LoanService {
         Loan loan = findLoanById(loanId);
         User staff = findUserByEmail(staffEmail, "Khong tim thay tai khoan nhan vien.");
 
-        if (loan.getStatus() != LoanStatus.OPEN && loan.getStatus() != LoanStatus.RETURNING) {
-            throw new BadRequestException("Chi co the xac nhan tra sach cho don OPEN hoac RETURNING.");
+        if (loan.getStatus() != LoanStatus.OPEN && loan.getStatus() != LoanStatus.OVERDUE && loan.getStatus() != LoanStatus.RETURNING) {
+            throw new BadRequestException("Chi co the xac nhan tra sach cho don OPEN, OVERDUE hoac RETURNING.");
         }
 
         normalizeLoanItemsToUnitCopies(loan);
@@ -416,15 +256,22 @@ public class LoanService {
             item.setReturnedAt(now);
             if (condition == BookCondition.OK) {
                 item.setStatus(LoanItemStatus.RETURNED);
-                incrementStock(item.getBook());
+                returnCopyOrStock(item, BookCopyCondition.GOOD);
+                createLateFineIfNeeded(item);
                 continue;
             }
 
             if (condition == BookCondition.DAMAGED) {
                 item.setStatus(LoanItemStatus.DAMAGED);
+                returnCopyOrStock(item, BookCopyCondition.DAMAGED);
+                createFineIfNeeded(item, FineReason.DAMAGED_BOOK, BigDecimal.valueOf(50000));
             } else {
                 item.setStatus(LoanItemStatus.LOST);
+                returnCopyOrStock(item, BookCopyCondition.LOST);
+                createFineIfNeeded(item, FineReason.LOST_BOOK, BigDecimal.valueOf(100000));
             }
+
+            createLateFineIfNeeded(item);
 
             issueLogs.add(item.getBook().getTitle() + "=" + condition.name());
         }
@@ -443,32 +290,30 @@ public class LoanService {
         return savedLoan;
     }
 
-    private void addLoanItemsFromCheckoutRequest(
-            Loan loan,
-            CheckoutRequestDTO request,
-            LoanItemStatus itemStatus,
-            LocalDateTime borrowedAt,
-            LocalDateTime dueAt
-    ) {
-        if (request == null || request.getItems() == null || request.getItems().isEmpty()) {
-            throw new BadRequestException("Danh sach sach khong duoc de trong.");
+    @Scheduled(cron = "0 */15 * * * *")
+    @Transactional
+    public void expireOldPendingLoans() {
+        LocalDateTime expiredBefore = LocalDateTime.now().minusHours(Math.max(pendingExpireHours, 1));
+        List<Loan> loans = loanRepository.findByStatusAndCreatedAtBefore(LoanStatus.PENDING, expiredBefore);
+
+        for (Loan loan : loans) {
+            releaseReservedStock(loan, LocalDateTime.now());
+            loan.setStatus(LoanStatus.EXPIRED);
+            loan.setClosedAt(LocalDateTime.now());
+            appendNote(loan, "Pending loan expired automatically.");
+            notificationService.notifyLoanStatus(loanRepository.save(loan));
         }
+    }
 
-        for (CheckoutRequestDTO.CheckoutItem requestItem : request.getItems()) {
-            if (requestItem == null || requestItem.getBookId() == null) {
-                throw new BadRequestException("bookId khong hop le.");
-            }
+    @Scheduled(cron = "0 */30 * * * *")
+    @Transactional
+    public void markOverdueLoans() {
+        List<Loan> loans = loanRepository.findByStatusAndDueAtBefore(LoanStatus.OPEN, LocalDateTime.now());
 
-            int quantity = requestItem.getQty() == null ? 1 : requestItem.getQty();
-            if (quantity < 1) {
-                throw new BadRequestException("So luong sach phai lon hon 0.");
-            }
-
-            Book book = findBookById(requestItem.getBookId());
-            reserveBookStock(book, quantity);
-            for (int index = 0; index < quantity; index++) {
-                loan.addLoanItem(buildLoanItem(book, itemStatus, borrowedAt, dueAt));
-            }
+        for (Loan loan : loans) {
+            loan.setStatus(LoanStatus.OVERDUE);
+            appendNote(loan, "Loan marked overdue automatically.");
+            notificationService.notifyLoanStatus(loanRepository.save(loan));
         }
     }
 
@@ -489,19 +334,72 @@ public class LoanService {
             }
 
             Book book = findBookById(bookId);
-            reserveBookStock(book, 1);
-            loan.addLoanItem(buildLoanItem(book, itemStatus, borrowedAt, dueAt));
+            BookCopy copy = reserveBookStock(book);
+            if (itemStatus == LoanItemStatus.BORROWED) {
+                bookCopyService.markBorrowed(copy);
+            }
+            loan.addLoanItem(buildLoanItem(book, copy, itemStatus, borrowedAt, dueAt));
         }
+    }
+
+    private void addLoanItemsFromReaderRequest(
+            Loan loan,
+            LoanCheckoutRequestDTO request,
+            LoanItemStatus itemStatus,
+            LocalDateTime borrowedAt,
+            LocalDateTime dueAt
+    ) {
+        if (request != null && request.getItems() != null && !request.getItems().isEmpty()) {
+            for (LoanCheckoutRequestDTO.CheckoutItem requestItem : request.getItems()) {
+                if (requestItem == null || requestItem.getBookId() == null) {
+                    throw new BadRequestException("bookId khong hop le.");
+                }
+
+                int quantity = requestItem.getQty() == null ? 1 : requestItem.getQty();
+                if (quantity < 1) {
+                    throw new BadRequestException("So luong sach phai lon hon 0.");
+                }
+
+                Book book = findBookById(requestItem.getBookId());
+                for (int index = 0; index < quantity; index++) {
+                    BookCopy copy = reserveBookStock(book);
+                    if (itemStatus == LoanItemStatus.BORROWED) {
+                        bookCopyService.markBorrowed(copy);
+                    }
+                    loan.addLoanItem(buildLoanItem(book, copy, itemStatus, borrowedAt, dueAt));
+                }
+            }
+            return;
+        }
+
+        addLoanItemsFromBookIds(loan, request != null ? request.getBookIds() : null, itemStatus, borrowedAt, dueAt);
+    }
+
+    private int countCheckoutQuantity(LoanCheckoutRequestDTO request) {
+        if (request == null) {
+            return 0;
+        }
+
+        if (request.getItems() != null && !request.getItems().isEmpty()) {
+            return request.getItems().stream()
+                    .filter(item -> item != null && item.getBookId() != null)
+                    .mapToInt(item -> item.getQty() == null ? 1 : Math.max(item.getQty(), 0))
+                    .sum();
+        }
+
+        return request.getBookIds() == null ? 0 : request.getBookIds().size();
     }
 
     private LoanItem buildLoanItem(
             Book book,
+            BookCopy copy,
             LoanItemStatus itemStatus,
             LocalDateTime borrowedAt,
             LocalDateTime dueAt
     ) {
         return LoanItem.builder()
                 .book(book)
+                .bookCopy(copy)
                 .qty(1)
                 .status(itemStatus)
                 .borrowedAt(borrowedAt)
@@ -509,13 +407,19 @@ public class LoanService {
                 .build();
     }
 
-    private void reserveBookStock(Book book, int quantity) {
+    private BookCopy reserveBookStock(Book book) {
         ensureBookCanBeBorrowed(book);
+        BookCopy copy = bookCopyService.reserveAvailableCopy(book);
+        if (copy != null) {
+            return copy;
+        }
+
         int available = book.getStockAvailable() == null ? 0 : book.getStockAvailable();
-        if (available < quantity) {
+        if (available < 1) {
             throw new BadRequestException("Sach '" + book.getTitle() + "' da het hoac khong du ton kho.");
         }
-        book.setStockAvailable(available - quantity);
+        book.setStockAvailable(available - 1);
+        return null;
     }
 
     private void ensureBookCanBeBorrowed(Book book) {
@@ -530,6 +434,40 @@ public class LoanService {
         book.setStockAvailable(available + 1);
     }
 
+    private void releaseCopyOrStock(LoanItem item) {
+        if (item.getBookCopy() != null) {
+            bookCopyService.releaseCopy(item.getBookCopy());
+            return;
+        }
+
+        incrementStock(item.getBook());
+    }
+
+    private void returnCopyOrStock(LoanItem item, BookCopyCondition condition) {
+        if (item.getBookCopy() != null) {
+            bookCopyService.markReturned(item.getBookCopy(), condition);
+            return;
+        }
+
+        if (condition == BookCopyCondition.GOOD) {
+            incrementStock(item.getBook());
+        }
+    }
+
+    private void createLateFineIfNeeded(LoanItem item) {
+        if (item.getDueAt() == null || item.getReturnedAt() == null) {
+            return;
+        }
+
+        if (item.getReturnedAt().isAfter(item.getDueAt())) {
+            createFineIfNeeded(item, FineReason.LATE_RETURN, BigDecimal.valueOf(10000));
+        }
+    }
+
+    private void createFineIfNeeded(LoanItem item, FineReason reason, BigDecimal amount) {
+        fineService.createForLoanItemIfAbsent(item, reason, amount);
+    }
+
     private void activateLoan(Loan loan, LocalDateTime loanedAt) {
         LocalDateTime dueAt = loanedAt.plusDays(DEFAULT_LOAN_DAYS);
         loan.setLoanedAt(loanedAt);
@@ -540,6 +478,7 @@ public class LoanService {
                     item.setStatus(LoanItemStatus.BORROWED);
                     item.setBorrowedAt(loanedAt);
                     item.setDueAt(dueAt);
+                    bookCopyService.markBorrowed(item.getBookCopy());
                 });
     }
 
@@ -547,7 +486,7 @@ public class LoanService {
         loan.getLoanItems().stream()
                 .filter(item -> STOCK_HELD_ITEM_STATUSES.contains(item.getStatus()))
                 .forEach(item -> {
-                    incrementStock(item.getBook());
+                    releaseCopyOrStock(item);
                     item.setStatus(LoanItemStatus.RETURNED);
                     item.setReturnedAt(releasedAt);
                 });
@@ -631,7 +570,8 @@ public class LoanService {
     private boolean isAllowedPickupTransition(LoanStatus currentStatus, LoanStatus newStatus) {
         return switch (currentStatus) {
             case PENDING -> EnumSet.of(LoanStatus.OPEN, LoanStatus.CANCELLED, LoanStatus.EXPIRED).contains(newStatus);
-            case OPEN -> EnumSet.of(LoanStatus.CLOSED, LoanStatus.EXPIRED).contains(newStatus);
+            case OPEN -> EnumSet.of(LoanStatus.CLOSED, LoanStatus.OVERDUE, LoanStatus.EXPIRED).contains(newStatus);
+            case OVERDUE -> EnumSet.of(LoanStatus.CLOSED, LoanStatus.EXPIRED).contains(newStatus);
             default -> false;
         };
     }
@@ -641,7 +581,8 @@ public class LoanService {
             case PENDING -> EnumSet.of(LoanStatus.PREPARING, LoanStatus.CANCELLED, LoanStatus.EXPIRED).contains(newStatus);
             case PREPARING -> EnumSet.of(LoanStatus.SHIPPING, LoanStatus.CANCELLED, LoanStatus.EXPIRED).contains(newStatus);
             case SHIPPING -> EnumSet.of(LoanStatus.OPEN, LoanStatus.EXPIRED).contains(newStatus);
-            case OPEN -> EnumSet.of(LoanStatus.RETURNING, LoanStatus.EXPIRED).contains(newStatus);
+            case OPEN -> EnumSet.of(LoanStatus.RETURNING, LoanStatus.OVERDUE, LoanStatus.EXPIRED).contains(newStatus);
+            case OVERDUE -> EnumSet.of(LoanStatus.RETURNING, LoanStatus.CLOSED, LoanStatus.EXPIRED).contains(newStatus);
             case RETURNING -> EnumSet.of(LoanStatus.CLOSED, LoanStatus.EXPIRED).contains(newStatus);
             default -> false;
         };
@@ -699,7 +640,8 @@ public class LoanService {
         for (LoanItem item : activeItems) {
             item.setStatus(LoanItemStatus.RETURNED);
             item.setReturnedAt(returnedAt);
-            incrementStock(item.getBook());
+            returnCopyOrStock(item, BookCopyCondition.GOOD);
+            createLateFineIfNeeded(item);
         }
 
         loan.setClosedAt(returnedAt);
@@ -717,15 +659,6 @@ public class LoanService {
         }
     }
 
-    private User findUserById(Integer userId, String message) {
-        if (userId == null) {
-            throw new BadRequestException(message);
-        }
-
-        return userRepository.findById(userId)
-                .orElseThrow(() -> new ResourceNotFoundException(message));
-    }
-
     private User findUserByEmail(String email, String message) {
         return userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException(message));
@@ -741,16 +674,6 @@ public class LoanService {
                 .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay phieu muon."));
     }
 
-    private int resolveDueDays(Integer dueDays) {
-        if (dueDays == null) {
-            return DEFAULT_LOAN_DAYS;
-        }
-        if (dueDays < 1) {
-            throw new BadRequestException("dueDays phai lon hon 0.");
-        }
-        return dueDays;
-    }
-
     private LoanStatus resolveLoanStatus(String value) {
         if (value == null || value.isBlank()) {
             throw new BadRequestException("Trang thai phieu muon khong hop le.");
@@ -761,9 +684,10 @@ public class LoanService {
             case "PACKING", "PREPARING" -> LoanStatus.PREPARING;
             case "SHIPPING" -> LoanStatus.SHIPPING;
             case "BORROWING", "OPEN" -> LoanStatus.OPEN;
+            case "OVERDUE" -> LoanStatus.OVERDUE;
             case "RETURNING" -> LoanStatus.RETURNING;
             case "RETURNED", "CLOSED" -> LoanStatus.CLOSED;
-            case "OVERDUE", "EXPIRED" -> LoanStatus.EXPIRED;
+            case "EXPIRED" -> LoanStatus.EXPIRED;
             case "CANCELLED" -> LoanStatus.CANCELLED;
             default -> throw new BadRequestException("Trang thai phieu muon khong hop le.");
         };
@@ -800,14 +724,6 @@ public class LoanService {
                 || status == LoanItemStatus.LOST;
     }
 
-    private String buildReservationNote(String pickupDate) {
-        String normalizedPickupDate = normalizeText(pickupDate);
-        if (normalizedPickupDate == null) {
-            return "Online reservation created.";
-        }
-        return "Online reservation created. Pickup date: " + normalizedPickupDate;
-    }
-
     private void appendNote(Loan loan, String fragment) {
         String normalizedFragment = normalizeText(fragment);
         if (normalizedFragment == null) {
@@ -831,7 +747,7 @@ public class LoanService {
                 .phone(loan.getDeliveryPhone())
                 .trackingCode(loan.getTrackingCode())
                 .createdAt(loan.getCreatedAt())
-                .loanedAt(loan.getLoanedAt())
+                .loanedAt(displayLoanedAt(loan))
                 .dueAt(loan.getDueAt())
                 .closedAt(loan.getClosedAt())
                 .items(toTrackingItems(loan))
@@ -850,9 +766,26 @@ public class LoanService {
                 .phone(loan.getDeliveryPhone())
                 .trackingCode(loan.getTrackingCode())
                 .createdAt(loan.getCreatedAt())
+                .loanedAt(displayLoanedAt(loan))
+                .dueAt(loan.getDueAt())
+                .borrowerCardCode(buildBorrowerCardCode(loan.getBorrower()))
+                .borrowerStudentCode(loan.getBorrower().getIdCardNumber())
+                .borrowerMembershipCode(loan.getBorrower().getMembership() != null
+                        ? loan.getBorrower().getMembership().getCode()
+                        : null)
+                .borrowerMembershipName(loan.getBorrower().getMembership() != null
+                        ? loan.getBorrower().getMembership().getName()
+                        : null)
+                .priorityProcessing(isPriorityBorrower(loan.getBorrower()))
                 .note(loan.getNote())
                 .items(toTrackingItems(loan))
                 .build();
+    }
+
+    private boolean isPriorityBorrower(User borrower) {
+        return borrower != null
+                && borrower.getMembership() != null
+                && Boolean.TRUE.equals(borrower.getMembership().getPriorityProcessing());
     }
 
     private List<LoanTrackingItemResponseDTO> toTrackingItems(Loan loan) {
@@ -864,10 +797,30 @@ public class LoanService {
                         .loanItemId(item.getId())
                         .bookId(item.getBook().getId())
                         .bookTitle(item.getBook().getTitle())
+                        .copyId(item.getBookCopy() != null ? item.getBookCopy().getId() : null)
+                        .copyBarcode(item.getBookCopy() != null ? item.getBookCopy().getBarcode() : null)
+                        .copyStatus(item.getBookCopy() != null && item.getBookCopy().getStatus() != null
+                                ? item.getBookCopy().getStatus().name()
+                                : null)
+                        .copyCondition(item.getBookCopy() != null && item.getBookCopy().getCondition() != null
+                                ? item.getBookCopy().getCondition().name()
+                                : null)
                         .quantity(item.getQty())
                         .status(item.getStatus().name())
-                        .build())
+                .build())
                 .toList();
+    }
+
+    private String buildBorrowerCardCode(User borrower) {
+        if (borrower == null || borrower.getId() == null) {
+            return null;
+        }
+
+        return "LIB-USER-" + borrower.getId();
+    }
+
+    private LocalDateTime displayLoanedAt(Loan loan) {
+        return loan.getLoanedAt() != null ? loan.getLoanedAt() : loan.getCreatedAt();
     }
 
     private String toDateString(LocalDateTime value) {

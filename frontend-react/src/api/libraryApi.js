@@ -20,12 +20,13 @@ export const libraryApi = {
   },
   users: {
     me: () => apiClient.get("/users/me"),
+    updateMe: (payload) => apiClient.put("/users/me", payload),
+    changeMyPassword: (payload) => apiClient.put("/users/me/password", payload),
     list: () => apiClient.get("/users"),
     myKyc: () => apiClient.get("/v1/users/me/kyc"),
     submitKyc: (payload) => apiClient.post("/v1/users/me/kyc", payload),
     updateKyc: (payload) => apiClient.put("/v1/users/me/kyc", payload),
     kycUsers: () => apiClient.get("/v1/admin/users/kyc"),
-    pendingKyc: () => apiClient.get("/v1/admin/users/pending-kyc"),
     approveKyc: (id) => apiClient.post(`/v1/admin/users/${id}/approve-kyc`, {}),
     rejectKyc: (id) => apiClient.post(`/v1/admin/users/${id}/reject-kyc`, {}),
     cancelVerification: () => apiClient.put("/v1/users/me/kyc/cancel", {}),
@@ -58,11 +59,17 @@ export const libraryApi = {
   books: {
     list: (params) => apiClient.get(`/books${buildQuery(params)}`),
     get: (id) => apiClient.get(`/books/${id}`),
-    newest: (limit = 8) => apiClient.get(`/books/newest${buildQuery({ limit })}`),
     featured: (limit = 8) => apiClient.get(`/books/featured${buildQuery({ limit })}`),
+    leaderboards: (limit = 6) => apiClient.get(`/books/leaderboards${buildQuery({ limit })}`),
     create: (payload) => apiClient.post("/books", payload),
     update: (id, payload) => apiClient.put(`/books/${id}`, payload),
     remove: (id) => apiClient.delete(`/books/${id}`)
+  },
+  bookCopies: {
+    byBook: (bookId) => apiClient.get(`/book-copies/books/${bookId}`),
+    create: (bookId, payload) => apiClient.post(`/book-copies/books/${bookId}`, payload),
+    update: (copyId, payload) => apiClient.put(`/book-copies/${copyId}`, payload),
+    remove: (copyId) => apiClient.delete(`/book-copies/${copyId}`)
   },
   media: {
     list: () => apiClient.get("/media"),
@@ -79,38 +86,31 @@ export const libraryApi = {
     operationsOverview: () => apiClient.get("/reports/operations/overview")
   },
   search: {
-    books: (params) => apiClient.get(`/search/books${buildQuery(params)}`),
-    suggestions: (keyword, limit = 8) =>
-      apiClient.get(`/search/suggestions${buildQuery({ keyword, limit })}`)
+    books: (params) => apiClient.get(`/search/books${buildQuery(params)}`)
   },
   circulation: {
-    checkout: (payload, processorId) =>
-      apiClient.post(`/circulation/checkout${buildQuery({ processorId })}`, payload),
-    checkoutOnline: (borrowerId, payload) => apiClient.post(`/circulation/checkout-online/${borrowerId}`, payload),
-    returnBook: (loanId, bookId) => apiClient.post(`/circulation/return/${loanId}/book/${bookId}`, {}),
     recent: () => apiClient.get("/circulation/recent"),
-    history: (userId) => apiClient.get(`/circulation/history/${userId}`),
-    reserve: (payload) => apiClient.post("/circulation/reserve", payload),
-    pendingReservations: () => apiClient.get("/circulation/reservations/pending"),
-    confirmReservation: (id) => apiClient.put(`/circulation/reservations/${id}/confirm`, {}),
-    cancelReservation: (id, reason) =>
-      apiClient.put(`/circulation/reservations/${id}/cancel`, { reason }),
-    updateStatus: (id, status) => apiClient.put(`/circulation/${id}/status`, { status })
+    myHistory: () => apiClient.get("/circulation/history/me")
   },
   loans: {
+    kanban: () => apiClient.get("/v1/admin/loans/kanban"),
+    checkout: (payload) => apiClient.post("/v1/loans/checkout", payload),
     requestReturn: (id) => apiClient.post(`/v1/loans/${id}/request-return`, {}),
+    confirmReturn: (id, payload) => apiClient.post(`/v1/admin/loans/${id}/confirm-return`, payload),
+    sendReturnReminder: (id) => apiClient.post(`/v1/admin/loans/${id}/return-reminder`, {}),
     updateAdminStatus: (id, status, trackingCode = "") =>
       apiClient.put(`/v1/admin/loans/${id}/status`, { newStatus: status, trackingCode })
   },
   cart: {
-    list: (userId) => apiClient.get(`/cart/users/${userId}`),
-    addBook: (userId, bookId) => apiClient.post(`/cart/users/${userId}/books/${bookId}`, {}),
-    removeBook: (userId, bookId) => apiClient.delete(`/cart/users/${userId}/books/${bookId}`),
-    clear: (userId) => apiClient.delete(`/cart/users/${userId}`)
+    me: () => apiClient.get("/cart/me"),
+    addMyBook: (bookId) => apiClient.post(`/cart/me/books/${bookId}`, {}),
+    updateMyQuantity: (bookId, quantity) => apiClient.put(`/cart/me/books/${bookId}/quantity`, { quantity }),
+    removeMyBook: (bookId) => apiClient.delete(`/cart/me/books/${bookId}`),
+    clearMine: () => apiClient.delete("/cart/me")
   },
   wishlists: {
-    list: (userId) => apiClient.get(`/wishlists/users/${userId}`),
-    toggle: (userId, bookId) => apiClient.post(`/wishlists/users/${userId}/books/${bookId}/toggle`, {})
+    me: () => apiClient.get("/wishlists/me"),
+    toggleMine: (bookId) => apiClient.post(`/wishlists/me/books/${bookId}/toggle`, {})
   },
   reviews: {
     listAll: () => apiClient.get("/reviews"),
@@ -119,27 +119,19 @@ export const libraryApi = {
     create: (bookId, payload) => apiClient.post(`/books/${bookId}/reviews`, payload)
   },
   fines: {
+    mine: () => apiClient.get("/fines/me"),
     list: () => apiClient.get("/fines"),
-    byUser: (userId) => apiClient.get(`/fines/users/${userId}`),
-    unpaid: () => apiClient.get("/fines/unpaid"),
     create: (payload) => apiClient.post("/fines", payload),
     markPaid: (id) => apiClient.put(`/fines/${id}/paid`, {})
   },
-  addresses: {
-    byUser: (userId) => apiClient.get(`/user-addresses/users/${userId}`),
-    save: (userId, payload) => apiClient.post(`/user-addresses/users/${userId}`, payload),
-    remove: (id) => apiClient.delete(`/user-addresses/${id}`)
-  },
-  systemConfigs: {
-    list: () => apiClient.get("/system-configs"),
-    upsert: (key, payload) => apiClient.put(`/system-configs/${key}`, payload)
-  },
   notifications: {
-    list: (userId) => apiClient.get(`/notifications/user/${userId}`),
-    unread: (userId) => apiClient.get(`/notifications/user/${userId}/unread`),
-    markAsRead: (id) => apiClient.put(`/notifications/${id}/read`, {})
+    mine: () => apiClient.get("/notifications/me"),
+    myUnread: () => apiClient.get("/notifications/me/unread"),
+    markMineAsRead: (id) => apiClient.put(`/notifications/me/${id}/read`, {})
   },
   payments: {
-    createPremiumVnpay: () => apiClient.post("/payments/vnpay/memberships/premium", {})
+    createPremiumVnpay: (membershipId) =>
+      apiClient.post(`/payments/vnpay/memberships/checkout${buildQuery({ membershipId })}`, {}),
+    createFineVnpay: (fineId) => apiClient.post(`/payments/vnpay/fines/${fineId}`, {})
   }
 };

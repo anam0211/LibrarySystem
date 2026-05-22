@@ -1,13 +1,8 @@
 package com.library.service;
 
 import com.library.common.response.PagedResult;
-import com.library.repository.AuthorRepository;
 import com.library.dto.response.BookResponseDTO;
 import com.library.repository.BookRepository;
-
-import com.library.repository.CategoryRepository;
-import com.library.repository.PublisherRepository;
-import com.library.dto.response.SearchSuggestionResponseDTO;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -16,11 +11,8 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.regex.Pattern;
 
 @Service
@@ -32,9 +24,6 @@ public class SearchService {
 
     BookService bookService;
     BookRepository bookRepository;
-    AuthorRepository authorRepository;
-    CategoryRepository categoryRepository;
-    PublisherRepository publisherRepository;
 
     public PagedResult<BookResponseDTO> searchBooks(
             String keyword,
@@ -96,36 +85,6 @@ public class SearchService {
             return bookService.getBooks(normalizedKeyword, authorId, categoryId, publisherId, publishYear, status, available,
                     normalizeSortBy(sortBy), sortDir, page, size);
         }
-    }
-
-    public SearchSuggestionResponseDTO suggest(String keyword, int limit) {
-        String normalizedKeyword = keyword == null ? "" : keyword.trim().toLowerCase(Locale.ROOT);
-
-        if (normalizedKeyword.isEmpty()) {
-            return SearchSuggestionResponseDTO.builder().suggestions(java.util.List.of()).build();
-        }
-
-        Set<String> suggestions = new LinkedHashSet<>();
-        suggestions.addAll(bookService.suggestTitles(normalizedKeyword, limit));
-        authorRepository.findAll().stream()
-                .map(author -> author.getName())
-                .filter(name -> name != null && name.toLowerCase(Locale.ROOT).contains(normalizedKeyword))
-                .limit(limit)
-                .forEach(suggestions::add);
-        categoryRepository.findAll().stream()
-                .map(category -> category.getName())
-                .filter(name -> name != null && name.toLowerCase(Locale.ROOT).contains(normalizedKeyword))
-                .limit(limit)
-                .forEach(suggestions::add);
-        publisherRepository.findAll().stream()
-                .map(publisher -> publisher.getName())
-                .filter(name -> name != null && name.toLowerCase(Locale.ROOT).contains(normalizedKeyword))
-                .limit(limit)
-                .forEach(suggestions::add);
-
-        return SearchSuggestionResponseDTO.builder()
-                .suggestions(suggestions.stream().limit(limit).toList())
-                .build();
     }
 
     private String buildFullTextQuery(String keyword) {

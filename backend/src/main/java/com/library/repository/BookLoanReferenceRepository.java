@@ -25,10 +25,11 @@ public class BookLoanReferenceRepository {
     public long countBorrowedCopiesByBookId(Integer bookId) {
         Number count = jdbcTemplate.queryForObject(
                 """
-                select coalesce(sum(li.qty), 0)
+                select coalesce(sum(coalesce(li.qty, 1)), 0)
                 from loan_items li
+                join loans l on l.loan_id = li.loan_id
                 where li.book_id = ?
-                  and li.status = 'RETURNED'
+                  and l.status in ('OPEN', 'OVERDUE', 'RETURNING', 'CLOSED')
                 """,
                 Number.class,
                 bookId

@@ -1,6 +1,7 @@
 package com.library.service;
 
 import com.library.common.exception.ResourceNotFoundException;
+import com.library.common.exception.BadRequestException;
 import com.library.dto.response.NotificationResponseDTO;
 import com.library.entity.DeliveryMethod;
 import com.library.entity.Loan;
@@ -73,6 +74,21 @@ public class NotificationService {
     }
 
     @Transactional
+    public void markAsReadForUser(Integer notificationId, Integer userId) {
+        Notification notification = notificationRepository.findById(notificationId)
+                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay thong bao voi ID: " + notificationId));
+
+        if (notification.getUserId() == null || !notification.getUserId().equals(userId)) {
+            throw new ResourceNotFoundException("Khong tim thay thong bao cua nguoi dung hien tai.");
+        }
+
+        if (notification.getReadAt() == null) {
+            notification.setReadAt(LocalDateTime.now());
+            notificationRepository.save(notification);
+        }
+    }
+
+    @Transactional
     public Notification createInApp(
             Integer userId,
             NotificationType type,
@@ -95,6 +111,39 @@ public class NotificationService {
                 .status(NotificationStatus.SENT)
                 .build();
         return notificationRepository.save(notification);
+    }
+
+    @Transactional
+    public NotificationResponseDTO sendReturnReminder(Integer loanId) {
+        Loan loan = loanRepository.findById(loanId)
+                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay phieu muon."));
+
+        Integer userId = loan.getBorrower() != null ? loan.getBorrower().getId() : null;
+        if (userId == null) {
+            throw new BadRequestException("Phieu muon khong co thong tin ban doc.");
+        }
+
+        if (loan.getStatus() != LoanStatus.OPEN && loan.getStatus() != LoanStatus.OVERDUE) {
+            throw new BadRequestException("Chi co the nhac tra cho phieu dang muon hoac qua han.");
+        }
+
+        boolean overdue = loan.getStatus() == LoanStatus.OVERDUE
+                || (loan.getDueAt() != null && loan.getDueAt().isBefore(LocalDateTime.now()));
+        NotificationType type = overdue ? NotificationType.OVERDUE : NotificationType.DUE_SOON;
+        String subject = overdue ? "Nhắc trả sách quá hạn" : "Nhắc trả sách";
+        String body = "Thư viện nhắc bạn trả " + bookSummary(loan)
+                + " của phiếu mượn #" + loan.getId()
+                + ". Hạn trả: " + dueDateText(loan)
+                + ". Vui lòng trả sách sớm để tránh phát sinh thêm phí.";
+
+        return mapToResponseDTO(createInApp(
+                userId,
+                type,
+                subject,
+                body,
+                loan.getId(),
+                firstBookId(loan)
+        ));
     }
 
     @Transactional
@@ -172,6 +221,7 @@ public class NotificationService {
             case PREPARING -> "Thư viện đang chuẩn bị sách";
             case SHIPPING -> "Sách đang được giao";
             case OPEN -> "Bạn đang mượn sách";
+            case OVERDUE -> "Phiếu mượn đã quá hạn";
             case RETURNING -> "Yêu cầu trả sách đã được ghi nhận";
             case CLOSED -> "Phiếu mượn đã hoàn tất";
             case CANCELLED -> "Phiếu mượn đã bị hủy";
@@ -192,6 +242,7 @@ public class NotificationService {
             case OPEN -> homeDelivery
                     ? loanText + " đã được giao thành công. Hạn trả: " + dueDateText(loan) + "."
                     : loanText + " đã được bàn giao tại quầy. Hạn trả: " + dueDateText(loan) + ".";
+            case OVERDUE -> loanText + " đã quá hạn trả. Vui lòng trả sách sớm để tránh phát sinh thêm phí.";
             case RETURNING -> loanText + " đã chuyển sang trạng thái chờ thư viện nhận lại sách.";
             case CLOSED -> loanText + " đã hoàn tất trả sách. Cảm ơn bạn đã sử dụng thư viện.";
             case CANCELLED -> loanText + " đã bị hủy. Sách đã được hoàn lại kho nếu chưa bàn giao.";

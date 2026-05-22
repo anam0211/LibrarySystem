@@ -2,6 +2,7 @@ package com.library.service;
 
 import com.library.entity.Membership;
 import com.library.entity.User;
+import com.library.config.MembershipProperties;
 import com.library.repository.MembershipRepository;
 import com.library.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +21,7 @@ public class MembershipService {
 
     private final UserRepository userRepository;
     private final MembershipRepository membershipRepository;
+    private final MembershipProperties membershipProperties;
 
     public List<Membership> getAllMemberships() {
         return membershipRepository.findAll();
@@ -61,11 +63,6 @@ public class MembershipService {
     }
 
     @Transactional
-    public User subscribeMembership(Integer userId) {
-        return subscribeMembership(userId, null);
-    }
-
-    @Transactional
     public User subscribeMembership(Integer userId, Integer membershipId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng"));
@@ -75,17 +72,18 @@ public class MembershipService {
             targetPlan = membershipRepository.findById(membershipId)
                     .orElseThrow(() -> new RuntimeException("Gói hội viên không tồn tại"));
         } else {
-            targetPlan = membershipRepository.findByCode("PREMIUM")
-                    .orElseThrow(() -> new RuntimeException("Gói Premium mặc định chưa được cấu hình"));
+            String defaultPaidCode = normalizeCode(membershipProperties.getDefaultPaidCode());
+            targetPlan = membershipRepository.findByCode(defaultPaidCode)
+                    .orElseThrow(() -> new RuntimeException("Gói hội viên mặc định chưa được cấu hình: " + defaultPaidCode));
         }
 
         user.setMembership(targetPlan);
         
         // Gia hạn thêm 30 ngày từ hôm nay (hoặc cộng dồn nếu đang còn hạn)
         if (user.getPremiumValidUntil() != null && user.getPremiumValidUntil().isAfter(LocalDate.now())) {
-            user.setPremiumValidUntil(user.getPremiumValidUntil().plusDays(30));
+            user.setPremiumValidUntil(user.getPremiumValidUntil().plusDays(membershipProperties.getSubscriptionDays()));
         } else {
-            user.setPremiumValidUntil(LocalDate.now().plusDays(30));
+            user.setPremiumValidUntil(LocalDate.now().plusDays(membershipProperties.getSubscriptionDays()));
         }
 
         return userRepository.save(user);
@@ -97,15 +95,20 @@ public class MembershipService {
         List<User> expiredUsers = userRepository.findByPremiumValidUntilBefore(LocalDate.now());
         
         if (!expiredUsers.isEmpty()) {
-            Membership freePlan = membershipRepository.findByCode("FREE")
-                    .orElseThrow(() -> new RuntimeException("Gói Free chưa được cấu hình"));
+            String freeCode = normalizeCode(membershipProperties.getFreeCode());
+            Membership freePlan = membershipRepository.findByCode(freeCode)
+                    .orElseThrow(() -> new RuntimeException("Gói miễn phí chưa được cấu hình: " + freeCode));
             
             for (User user : expiredUsers) {
                 user.setMembership(freePlan);
                 user.setPremiumValidUntil(null);
             }
             userRepository.saveAll(expiredUsers);
-            log.info("Đã hạ cấp {} tài khoản hết hạn Premium về gói Free.", expiredUsers.size());
+            log.info("Đã hạ cấp {} tài khoản hết hạn hội viên về gói {}.", expiredUsers.size(), freeCode);
         }
+    }
+
+    private String normalizeCode(String code) {
+        return code == null ? "" : code.trim().toUpperCase();
     }
 }

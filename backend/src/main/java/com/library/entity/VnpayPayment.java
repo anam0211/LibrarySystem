@@ -34,6 +34,17 @@ public class VnpayPayment {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "fine_id")
+    private Fine fine;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "membership_id")
+    private Membership membership;
+
+    @Column(name = "payment_type", nullable = false, length = 30)
+    private String paymentType = "MEMBERSHIP";
+
     @Column(name = "amount_vnd", nullable = false)
     private Long amountVnd;
 

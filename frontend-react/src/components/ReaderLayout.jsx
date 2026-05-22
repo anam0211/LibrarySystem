@@ -5,6 +5,7 @@ import {
   LogoutOutlined,
   ReadOutlined,
   RollbackOutlined,
+  SettingOutlined,
   ShoppingCartOutlined,
   TruckOutlined,
   WalletOutlined
@@ -21,6 +22,7 @@ const READER_MENU_ITEMS = [
   { key: "/reader/fines", label: "Nợ phạt", icon: <WalletOutlined /> },
   { key: "/reader/favorites", label: "Yêu thích", icon: <HeartOutlined /> },
   { key: "/reader/card", label: "Thẻ thư viện", icon: <IdcardOutlined /> },
+  { key: "/reader/account", label: "Tài khoản", icon: <SettingOutlined /> },
   { key: "/reader/cart", label: "Giỏ mượn", icon: <ShoppingCartOutlined /> },
   { key: "/reader/notifications", label: "Thông báo", icon: <BellOutlined /> }
 ];
