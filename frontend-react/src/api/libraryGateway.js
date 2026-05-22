@@ -135,11 +135,13 @@ function normalizePage(pageData, filters = {}) {
 }
 
 function normalizeKycStatus(status) {
-  if (status === "UNVERIFIED") {
-    return "NEW";
+  switch (status) {
+    case "UNVERIFIED": return "NEW";
+    case "PENDING":    return "PENDING";
+    case "VERIFIED":   return "VERIFIED";
+    case "REJECTED":   return "REJECTED";
+    default:           return status || "NEW";
   }
-
-  return status || "NEW";
 }
 
 function extractFileName(value) {
