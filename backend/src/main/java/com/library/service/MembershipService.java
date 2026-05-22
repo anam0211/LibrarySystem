@@ -3,6 +3,8 @@ package com.library.service;
 import com.library.entity.Membership;
 import com.library.entity.User;
 import com.library.config.MembershipProperties;
+import com.library.common.exception.BadRequestException;
+import com.library.common.exception.ResourceNotFoundException;
 import com.library.repository.MembershipRepository;
 import com.library.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -30,7 +32,7 @@ public class MembershipService {
     @Transactional
     public Membership createMembership(Membership request) {
         if (membershipRepository.findByCode(request.getCode()).isPresent()) {
-            throw new RuntimeException("Mã gói hội viên đã tồn tại!");
+            throw new BadRequestException("Mã gói hội viên đã tồn tại.");
         }
         return membershipRepository.save(request);
     }
@@ -38,10 +40,10 @@ public class MembershipService {
     @Transactional
     public Membership updateMembership(Integer id, Membership request) {
         Membership existing = membershipRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy gói hội viên!"));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy gói hội viên."));
         
         if (!existing.getCode().equals(request.getCode()) && membershipRepository.findByCode(request.getCode()).isPresent()) {
-            throw new RuntimeException("Mã gói hội viên mới đã bị trùng với một gói khác!");
+            throw new BadRequestException("Mã gói hội viên mới đã bị trùng với một gói khác.");
         }
 
         existing.setCode(request.getCode());

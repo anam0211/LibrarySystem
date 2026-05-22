@@ -2,12 +2,15 @@ package com.library.repository;
 
 import com.library.entity.Book;
 import com.library.entity.BookStatus;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface BookRepository extends JpaRepository<Book, Integer>, JpaSpecificationExecutor<Book> {
     boolean existsByIsbn(String isbn);
@@ -28,4 +31,12 @@ public interface BookRepository extends JpaRepository<Book, Integer>, JpaSpecifi
             order by ft.[RANK] desc
             """, nativeQuery = true)
     List<Integer> searchBookIdsByFullText(@Param("ftsQuery") String ftsQuery);
+
+    /**
+     * Lấy Book với pessimistic write lock để bảo vệ stock_available
+     * khỏi race condition khi nhiều request checkout cùng lúc.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT b FROM Book b WHERE b.id = :id")
+    Optional<Book> findWithLockById(@Param("id") Integer id);
 }

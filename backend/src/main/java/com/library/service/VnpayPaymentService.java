@@ -86,15 +86,15 @@ public class VnpayPaymentService {
     @Transactional
     public Map<String, Object> createFinePayment(String userEmail, Integer fineId, String clientIp, String frontendReturnUrl) {
         User user = userRepository.findByEmail(userEmail)
-                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay nguoi dung."));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy người dùng."));
         Fine fine = fineRepository.findById(fineId)
-                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay phieu phat."));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy phiếu phạt."));
 
         if (fine.getUser() == null || !fine.getUser().getId().equals(user.getId())) {
-            throw new BadRequestException("Ban khong co quyen thanh toan phieu phat nay.");
+            throw new BadRequestException("Bạn không có quyền thanh toán phiếu phạt này.");
         }
         if (fine.getStatus() == FineStatus.PAID) {
-            throw new BadRequestException("Phieu phat da duoc thanh toan.");
+            throw new BadRequestException("Phiếu phạt đã được thanh toán.");
         }
 
         long amountVnd = fine.getAmount().setScale(0, RoundingMode.HALF_UP).longValueExact();
@@ -122,7 +122,7 @@ public class VnpayPaymentService {
     @Transactional
     public PaymentResult handleReturn(Map<String, String> params) {
         if (!isValidSignature(params)) {
-            return PaymentResult.failed("invalid-signature", "Chu ky VNPay khong hop le.");
+            return PaymentResult.failed("invalid-signature", "Chữ ký VNPay không hợp lệ.");
         }
 
         return updatePaymentFromVnpay(params, false);
@@ -168,18 +168,18 @@ public class VnpayPaymentService {
         VnpayPayment payment = vnpayPaymentRepository.findByTxnRef(txnRef)
                 .orElse(null);
         if (payment == null) {
-            return PaymentResult.failed(txnRef, "Khong tim thay giao dich.");
+            return PaymentResult.failed(txnRef, "Không tìm thấy giao dịch.");
         }
 
         if (!isAmountMatching(payment, params.get("vnp_Amount"))) {
             payment.setStatus("FAILED");
             payment.setVnpResponseCode(params.get("vnp_ResponseCode"));
             payment.setVnpTransactionStatus(params.get("vnp_TransactionStatus"));
-            return PaymentResult.failed(txnRef, "So tien thanh toan khong hop le.");
+            return PaymentResult.failed(txnRef, "Số tiền thanh toán không hợp lệ.");
         }
 
         if ("SUCCESS".equals(payment.getStatus())) {
-            return PaymentResult.success(txnRef, "Giao dich da duoc xac nhan truoc do.");
+            return PaymentResult.success(txnRef, "Giao dịch đã được xác nhận trước đó.");
         }
 
         String responseCode = params.get("vnp_ResponseCode");
@@ -192,11 +192,11 @@ public class VnpayPaymentService {
             applySuccessfulPayment(payment);
             payment.setStatus("SUCCESS");
             payment.setPaidAt(LocalDateTime.now(VIETNAM_ZONE));
-            return PaymentResult.success(txnRef, fromIpn ? "Confirm Success" : "Thanh toan thanh cong.");
+            return PaymentResult.success(txnRef, fromIpn ? "Confirm Success" : "Thanh toán thành công.");
         }
 
         payment.setStatus("FAILED");
-        return PaymentResult.failed(txnRef, "Thanh toan khong thanh cong.");
+        return PaymentResult.failed(txnRef, "Thanh toán không thành công.");
     }
 
     private String buildPaymentUrl(VnpayPayment payment, String clientIp) {
@@ -279,7 +279,7 @@ public class VnpayPaymentService {
             }
             return result.toString();
         } catch (Exception exception) {
-            throw new IllegalStateException("Khong the tao chu ky VNPay.", exception);
+            throw new IllegalStateException("Không thể tạo chữ ký VNPay.", exception);
         }
     }
 
@@ -298,12 +298,12 @@ public class VnpayPaymentService {
     private Membership resolveMembershipPlan(Integer membershipId) {
         if (membershipId != null) {
             return membershipRepository.findById(membershipId)
-                    .orElseThrow(() -> new BadRequestException("Goi hoi vien khong ton tai."));
+                    .orElseThrow(() -> new BadRequestException("Gói hội viên không tồn tại."));
         }
 
         String defaultPaidCode = normalizeCode(membershipProperties.getDefaultPaidCode());
         return membershipRepository.findByCode(defaultPaidCode)
-                .orElseThrow(() -> new BadRequestException("Goi hoi vien mac dinh chua duoc cau hinh: " + defaultPaidCode));
+                .orElseThrow(() -> new BadRequestException("Gói hội viên mặc định chưa được cấu hình: " + defaultPaidCode));
     }
 
     private long resolveAmountVnd(Membership membershipPlan) {
@@ -325,7 +325,7 @@ public class VnpayPaymentService {
         if ("FINE".equalsIgnoreCase(payment.getPaymentType())) {
             Fine fine = payment.getFine();
             if (fine == null) {
-                throw new BadRequestException("Giao dich phat khong co phieu phat.");
+                throw new BadRequestException("Giao dịch phạt không có phiếu phạt.");
             }
             fine.setStatus(FineStatus.PAID);
             fine.setPaidAt(LocalDateTime.now(VIETNAM_ZONE));
@@ -367,7 +367,7 @@ public class VnpayPaymentService {
     private void ensureVnpayConfigured() {
         if (!StringUtils.hasText(vnpayProperties.getTmnCode())
                 || !StringUtils.hasText(vnpayProperties.getHashSecret())) {
-            throw new BadRequestException("Chua cau hinh VNPAY_TMN_CODE va VNPAY_HASH_SECRET.");
+            throw new BadRequestException("Chưa cấu hình VNPAY_TMN_CODE và VNPAY_HASH_SECRET.");
         }
     }
 

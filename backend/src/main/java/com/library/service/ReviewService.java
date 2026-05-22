@@ -5,6 +5,8 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.library.common.exception.BadRequestException;
+import com.library.common.exception.ResourceNotFoundException;
 import com.library.entity.Book;
 import com.library.entity.Review;
 import com.library.entity.User;
@@ -35,13 +37,13 @@ public class ReviewService {
     @Transactional
     public Review create(Integer userId, Integer bookId, Integer rating, String comment) {
         if (rating == null || rating < 1 || rating > 5) {
-            throw new RuntimeException("Rating must be between 1 and 5.");
+            throw new BadRequestException("Điểm đánh giá phải từ 1 đến 5.");
         }
 
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found."));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy người dùng."));
         Book book = bookRepository.findById(bookId)
-                .orElseThrow(() -> new RuntimeException("Book not found."));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy sách."));
 
         Review review = new Review();
         review.setUser(user);
@@ -56,7 +58,7 @@ public class ReviewService {
     @Transactional
     public Review setHidden(Integer reviewId, Boolean hidden) {
         Review review = reviewRepository.findById(reviewId)
-                .orElseThrow(() -> new RuntimeException("Review not found."));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy đánh giá."));
         review.setHidden(Boolean.TRUE.equals(hidden));
         Review savedReview = reviewRepository.save(review);
         refreshBookRating(review.getBook());

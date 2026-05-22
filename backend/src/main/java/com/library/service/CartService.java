@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.library.common.exception.BadRequestException;
+import com.library.common.exception.ResourceNotFoundException;
 import com.library.entity.Book;
 import com.library.entity.BookStatus;
 import com.library.entity.Cart;
@@ -41,7 +42,7 @@ public class CartService {
     public CartItem addBook(Integer userId, Integer bookId) {
         Cart cart = getOrCreateCart(userId);
         Book book = bookRepository.findById(bookId)
-                .orElseThrow(() -> new RuntimeException("Book not found."));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy sách."));
         ensureBookCanBeBorrowed(book);
 
         return cartItemRepository.findByCart_IdAndBook_Id(cart.getId(), bookId)
@@ -56,17 +57,17 @@ public class CartService {
     @Transactional
     public CartItem updateQuantity(Integer userId, Integer bookId, Integer quantity) {
         if (quantity == null || quantity < 1) {
-            throw new BadRequestException("So luong sach phai lon hon 0.");
+            throw new BadRequestException("Số lượng sách phải lớn hơn 0.");
         }
 
         CartItem item = cartItemRepository.findByCart_User_IdAndBook_Id(userId, bookId)
-                .orElseThrow(() -> new BadRequestException("Sach khong co trong gio muon."));
+                .orElseThrow(() -> new BadRequestException("Sách không có trong giỏ mượn."));
         Book book = item.getBook();
         ensureBookCanBeBorrowed(book);
 
         int stockAvailable = book.getStockAvailable() == null ? 0 : book.getStockAvailable();
         if (quantity > stockAvailable) {
-            throw new BadRequestException("So luong vuot qua so sach con trong kho.");
+            throw new BadRequestException("Số lượng vượt quá số sách còn trong kho.");
         }
 
         item.setQuantity(quantity);
@@ -85,7 +86,7 @@ public class CartService {
 
     private void ensureBookCanBeBorrowed(Book book) {
         if (book.getStatus() == BookStatus.ARCHIVED) {
-            throw new BadRequestException("Sach da duoc luu tru va khong the muon.");
+            throw new BadRequestException("Sách đã được lưu trữ và không thể mượn.");
         }
     }
 
@@ -93,7 +94,7 @@ public class CartService {
         return cartRepository.findByUser_Id(userId)
                 .orElseGet(() -> {
                     User user = userRepository.findById(userId)
-                            .orElseThrow(() -> new RuntimeException("User not found."));
+                            .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy người dùng."));
                     Cart cart = new Cart();
                     cart.setUser(user);
                     return cartRepository.save(cart);

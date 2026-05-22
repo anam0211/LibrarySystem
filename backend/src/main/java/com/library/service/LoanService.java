@@ -333,7 +333,7 @@ public class LoanService {
                 throw new BadRequestException("bookId khong hop le.");
             }
 
-            Book book = findBookById(bookId);
+            Book book = findBookByIdForUpdate(bookId);
             BookCopy copy = reserveBookStock(book);
             if (itemStatus == LoanItemStatus.BORROWED) {
                 bookCopyService.markBorrowed(copy);
@@ -360,7 +360,7 @@ public class LoanService {
                     throw new BadRequestException("So luong sach phai lon hon 0.");
                 }
 
-                Book book = findBookById(requestItem.getBookId());
+                Book book = findBookByIdForUpdate(requestItem.getBookId());
                 for (int index = 0; index < quantity; index++) {
                     BookCopy copy = reserveBookStock(book);
                     if (itemStatus == LoanItemStatus.BORROWED) {
@@ -537,14 +537,14 @@ public class LoanService {
 
     private BookCondition resolveBookCondition(String value) {
         if (value == null || value.isBlank()) {
-            throw new BadRequestException("Gia tri bookCondition khong hop le.");
+            throw new BadRequestException("Giá trị tình trạng sách không hợp lệ.");
         }
 
         return switch (value.trim().toUpperCase()) {
             case "OK" -> BookCondition.OK;
             case "DAMAGED" -> BookCondition.DAMAGED;
             case "LOST" -> BookCondition.LOST;
-            default -> throw new BadRequestException("bookCondition phai la OK, DAMAGED hoac LOST.");
+            default -> throw new BadRequestException("Tình trạng sách phải là OK, DAMAGED hoặc LOST.");
         };
     }
 
@@ -555,7 +555,7 @@ public class LoanService {
         }
 
         if (currentStatus == LoanStatus.CLOSED || currentStatus == LoanStatus.CANCELLED) {
-            throw new BadRequestException("Phieu muon da ket thuc, khong the cap nhat trang thai.");
+            throw new BadRequestException("Phiếu mượn đã kết thúc, không thể cập nhật trạng thái.");
         }
 
         boolean allowed = isHomeDelivery(loan.getDeliveryMethod())
@@ -563,7 +563,7 @@ public class LoanService {
                 : isAllowedPickupTransition(currentStatus, newStatus);
 
         if (!allowed) {
-            throw new BadRequestException("Khong the chuyen trang thai tu " + currentStatus + " sang " + newStatus + ".");
+            throw new BadRequestException("Không thể chuyển trạng thái từ " + currentStatus + " sang " + newStatus + ".");
         }
     }
 
@@ -649,13 +649,13 @@ public class LoanService {
 
     private void ensureBorrowerVerified(User borrower) {
         if (borrower.getVerificationStatus() != VerificationStatus.VERIFIED) {
-            throw new BadRequestException("Tai khoan chua duoc VERIFIED.");
+            throw new BadRequestException("Tài khoản chưa được xác thực. Vui lòng hoàn thành xác minh KYC.");
         }
     }
 
     private void ensureLoanOwner(Loan loan, String borrowerEmail) {
         if (!loan.getBorrower().getEmail().equalsIgnoreCase(borrowerEmail)) {
-            throw new BadRequestException("Ban khong co quyen thao tac voi phieu muon nay.");
+            throw new BadRequestException("Bạn không có quyền thao tác với phiếu mượn này.");
         }
     }
 
@@ -664,20 +664,26 @@ public class LoanService {
                 .orElseThrow(() -> new ResourceNotFoundException(message));
     }
 
+    /**
+     * Lấy sách với pessimistic write lock — dùng khi cần thao tác stock
+     * (reserve/checkout) để ngăn race condition giữa các transaction đồng thời.
+     */
+    private Book findBookByIdForUpdate(Integer bookId) {
+        return bookRepository.findWithLockById(bookId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy sách với mã ID " + bookId + "."));
+    }
+
     private Book findBookById(Integer bookId) {
         return bookRepository.findById(bookId)
-                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay sach co ID " + bookId + "."));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy sách với mã ID " + bookId + "."));
     }
 
     private Loan findLoanById(Integer loanId) {
         return loanRepository.findById(loanId)
-                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay phieu muon."));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy phiếu mượn."));
     }
 
     private LoanStatus resolveLoanStatus(String value) {
-        if (value == null || value.isBlank()) {
-            throw new BadRequestException("Trang thai phieu muon khong hop le.");
-        }
 
         return switch (value.trim().toUpperCase()) {
             case "NEW", "PENDING" -> LoanStatus.PENDING;
@@ -689,7 +695,7 @@ public class LoanService {
             case "RETURNED", "CLOSED" -> LoanStatus.CLOSED;
             case "EXPIRED" -> LoanStatus.EXPIRED;
             case "CANCELLED" -> LoanStatus.CANCELLED;
-            default -> throw new BadRequestException("Trang thai phieu muon khong hop le.");
+            default -> throw new BadRequestException("Trạng thái phiếu mượn không hợp lệ.");
         };
     }
 
@@ -701,16 +707,16 @@ public class LoanService {
         try {
             return DeliveryMethod.valueOf(value.trim().toUpperCase());
         } catch (IllegalArgumentException exception) {
-            throw new BadRequestException("Phuong thuc nhan sach khong hop le.");
+            throw new BadRequestException("Phương thức nhận sách không hợp lệ.");
         }
     }
 
     private void validateDeliveryDetails(DeliveryMethod deliveryMethod, String address, String phone) {
         if (normalizeText(phone) == null) {
-            throw new BadRequestException("So dien thoai khong duoc de trong.");
+            throw new BadRequestException("Số điện thoại không được để trống.");
         }
         if (isHomeDelivery(deliveryMethod) && normalizeText(address) == null) {
-            throw new BadRequestException("Dia chi giao sach khong duoc de trong.");
+            throw new BadRequestException("Địa chỉ giao sách không được để trống.");
         }
     }
 

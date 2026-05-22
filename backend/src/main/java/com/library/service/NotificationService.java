@@ -76,10 +76,10 @@ public class NotificationService {
     @Transactional
     public void markAsReadForUser(Integer notificationId, Integer userId) {
         Notification notification = notificationRepository.findById(notificationId)
-                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay thong bao voi ID: " + notificationId));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy thông báo với ID: " + notificationId));
 
         if (notification.getUserId() == null || !notification.getUserId().equals(userId)) {
-            throw new ResourceNotFoundException("Khong tim thay thong bao cua nguoi dung hien tai.");
+            throw new ResourceNotFoundException("Không tìm thấy thông báo của người dùng hiện tại.");
         }
 
         if (notification.getReadAt() == null) {
@@ -116,15 +116,15 @@ public class NotificationService {
     @Transactional
     public NotificationResponseDTO sendReturnReminder(Integer loanId) {
         Loan loan = loanRepository.findById(loanId)
-                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay phieu muon."));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy phiếu mượn."));
 
         Integer userId = loan.getBorrower() != null ? loan.getBorrower().getId() : null;
         if (userId == null) {
-            throw new BadRequestException("Phieu muon khong co thong tin ban doc.");
+            throw new BadRequestException("Phiếu mượn không có thông tin bạn đọc.");
         }
 
         if (loan.getStatus() != LoanStatus.OPEN && loan.getStatus() != LoanStatus.OVERDUE) {
-            throw new BadRequestException("Chi co the nhac tra cho phieu dang muon hoac qua han.");
+            throw new BadRequestException("Chỉ có thể nhắc trả cho phiếu đang mượn hoặc quá hạn.");
         }
 
         boolean overdue = loan.getStatus() == LoanStatus.OVERDUE

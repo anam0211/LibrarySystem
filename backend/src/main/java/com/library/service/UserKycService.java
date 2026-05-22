@@ -61,6 +61,7 @@ public class UserKycService {
         if (user.getVerificationStatus() == VerificationStatus.VERIFIED) {
             throw new BadRequestException("Hồ sơ đã được xác thực, bạn đọc không thể chỉnh sửa thông tin.");
         }
+        // Cho phép nộp lại khi đang PENDING, UNVERIFIED, hoặc REJECTED
 
         String previousImageUrl = user.getIdCardImageUrl();
         String submittedEmail = resolveSubmittedEmail(user, request);
@@ -104,14 +105,14 @@ public class UserKycService {
 
     public UserKycResponseDTO approveKyc(Integer userId) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay nguoi dung."));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy người dùng."));
 
         if (user.getVerificationStatus() != VerificationStatus.PENDING) {
-            throw new BadRequestException("Chi co the duyet tai khoan dang o trang thai PENDING.");
+            throw new BadRequestException("Chỉ có thể duyệt tài khoản đang ở trạng thái PENDING.");
         }
 
         if (normalize(user.getIdCardImageUrl()) == null) {
-            throw new BadRequestException("Nguoi dung chua gui anh CCCD.");
+            throw new BadRequestException("Người dùng chưa gửi ảnh CCCD.");
         }
 
         user.setVerificationStatus(VerificationStatus.VERIFIED);
@@ -120,26 +121,26 @@ public class UserKycService {
 
     public UserKycResponseDTO rejectKyc(Integer userId) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay nguoi dung."));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy người dùng."));
 
-        if (user.getVerificationStatus() == VerificationStatus.UNVERIFIED) {
-            throw new BadRequestException("Ho so nay chua duoc gui xac thuc.");
+        if (user.getVerificationStatus() != VerificationStatus.PENDING) {
+            throw new BadRequestException("Chỉ có thể từ chối tài khoản đang ở trạng thái PENDING.");
         }
 
-        user.setVerificationStatus(VerificationStatus.UNVERIFIED);
+        user.setVerificationStatus(VerificationStatus.REJECTED);
         return toKycResponse(userRepository.save(user));
     }
 
     private String resolveImageUrl(User user, UserKycRequestDTO request) {
         if (request == null) {
-            throw new BadRequestException("Du lieu KYC khong duoc de trong.");
+            throw new BadRequestException("Dữ liệu KYC không được để trống.");
         }
 
         String imageBase64 = normalize(request.getIdCardImageBase64());
         String imageUrl = normalize(request.getIdCardImageUrl());
 
         if (imageBase64 != null && imageUrl != null) {
-            throw new BadRequestException("Chi duoc gui mot trong hai truong: idCardImageBase64 hoac idCardImageUrl.");
+            throw new BadRequestException("Chỉ được gửi một trong hai trường: idCardImageBase64 hoặc idCardImageUrl.");
         }
 
         if (imageUrl != null) {
@@ -161,17 +162,17 @@ public class UserKycService {
         try {
             URI uri = new URI(imageUrl);
             if (uri.getScheme() == null) {
-                throw new BadRequestException("idCardImageUrl phai la link hop le.");
+                throw new BadRequestException("idCardImageUrl phải là đường dẫn hợp lệ.");
             }
 
             String scheme = uri.getScheme().toLowerCase();
             if (!scheme.equals("http") && !scheme.equals("https")) {
-                throw new BadRequestException("idCardImageUrl chi ho tro http, https hoac duong dan noi bo.");
+                throw new BadRequestException("idCardImageUrl chỉ hỗ trợ giao thức http, https hoặc đường dẫn nội bộ.");
             }
 
             return imageUrl;
         } catch (URISyntaxException exception) {
-            throw new BadRequestException("idCardImageUrl phai la link hop le.");
+            throw new BadRequestException("idCardImageUrl phải là đường dẫn hợp lệ.");
         }
     }
 
@@ -192,21 +193,21 @@ public class UserKycService {
 
         String extension = MIME_EXTENSION_MAP.get(mimeType);
         if (extension == null) {
-            throw new BadRequestException("Chi ho tro anh CCCD dang jpeg, png hoac webp.");
+            throw new BadRequestException("Chỉ hỗ trợ ảnh CCCD định dạng jpeg, png hoặc webp.");
         }
 
         byte[] content;
         try {
             content = Base64.getMimeDecoder().decode(payload);
         } catch (IllegalArgumentException exception) {
-            throw new BadRequestException("Chuoi idCardImageBase64 khong hop le.");
+            throw new BadRequestException("Chuỗi idCardImageBase64 không hợp lệ.");
         }
 
         if (content.length == 0) {
-            throw new BadRequestException("Anh CCCD khong duoc de trong.");
+            throw new BadRequestException("Ảnh CCCD không được để trống.");
         }
         if (content.length > MAX_FILE_SIZE) {
-            throw new BadRequestException("Anh CCCD vuot qua gioi han 10MB.");
+            throw new BadRequestException("Ảnh CCCD vượt quá giới hạn 10MB.");
         }
 
         try {
@@ -218,7 +219,7 @@ public class UserKycService {
             Files.write(targetPath, content);
             return INTERNAL_MEDIA_PREFIX + filename;
         } catch (IOException exception) {
-            throw new BadRequestException("Khong the luu anh CCCD.");
+            throw new BadRequestException("Không thể lưu ảnh CCCD.");
         }
     }
 
@@ -238,13 +239,17 @@ public class UserKycService {
     private Path resolveStorageDirectory() {
         String uploadDir = normalize(mediaStorageProperties.getUploadDir());
         if (uploadDir == null) {
-            throw new BadRequestException("Chua cau hinh duong dan luu media.");
+            throw new BadRequestException("Chưa cấu hình đường dẫn lưu media.");
         }
         return Paths.get(uploadDir);
     }
 
     private UserKycResponseDTO toKycResponse(User user) {
-        boolean canEdit = user.getVerificationStatus() != VerificationStatus.VERIFIED;
+        VerificationStatus status = user.getVerificationStatus();
+        boolean canEdit = status != VerificationStatus.VERIFIED;
+        // Có thể nộp lại khi chưa xác thực hoặc đã bị từ chối
+        boolean canResubmit = status == VerificationStatus.UNVERIFIED
+                || status == VerificationStatus.REJECTED;
 
         return UserKycResponseDTO.builder()
                 .userId(user.getId())
@@ -257,7 +262,7 @@ public class UserKycService {
                 .verificationStatus(user.getVerificationStatus().name())
                 .idCardImageUrl(user.getIdCardImageUrl())
                 .canEdit(canEdit)
-                .canResubmit(canEdit)
+                .canResubmit(canResubmit)
                 .adminApprovalEnabled(true)
                 .updatedAt(user.getUpdatedAt())
                 .build();
@@ -281,7 +286,7 @@ public class UserKycService {
 
     private User findUserByEmail(String userEmail) {
         return userRepository.findByEmail(userEmail)
-                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay nguoi dung."));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy người dùng."));
     }
 
     private String resolveSubmittedEmail(User user, UserKycRequestDTO request) {
@@ -292,10 +297,10 @@ public class UserKycService {
         );
 
         if (email == null) {
-            throw new BadRequestException("Email xac thuc khong duoc de trong.");
+            throw new BadRequestException("Email xác thực không được để trống.");
         }
         if (email.length() > 255 || !EMAIL_PATTERN.matcher(email).matches()) {
-            throw new BadRequestException("Email xac thuc khong hop le.");
+            throw new BadRequestException("Email xác thực không hợp lệ.");
         }
 
         return email;
@@ -309,10 +314,10 @@ public class UserKycService {
         );
 
         if (phone == null) {
-            throw new BadRequestException("So dien thoai xac thuc khong duoc de trong.");
+            throw new BadRequestException("Số điện thoại xác thực không được để trống.");
         }
         if (!PHONE_PATTERN.matcher(phone).matches()) {
-            throw new BadRequestException("So dien thoai xac thuc khong hop le.");
+            throw new BadRequestException("Số điện thoại xác thực không hợp lệ.");
         }
 
         return phone;
@@ -325,10 +330,10 @@ public class UserKycService {
         );
 
         if (address == null) {
-            throw new BadRequestException("Dia chi xac thuc khong duoc de trong.");
+            throw new BadRequestException("Địa chỉ xác thực không được để trống.");
         }
         if (address.length() > 500) {
-            throw new BadRequestException("Dia chi xac thuc khong duoc vuot qua 500 ky tu.");
+            throw new BadRequestException("Địa chỉ xác thực không được vượt quá 500 ký tự.");
         }
 
         return address;
@@ -341,7 +346,7 @@ public class UserKycService {
         );
 
         if (idCardNumber != null && idCardNumber.length() > 30) {
-            throw new BadRequestException("So CCCD khong duoc vuot qua 30 ky tu.");
+            throw new BadRequestException("Số CCCD không được vượt quá 30 ký tự.");
         }
 
         return idCardNumber;

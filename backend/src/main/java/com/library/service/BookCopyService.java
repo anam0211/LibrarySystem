@@ -93,7 +93,9 @@ public class BookCopyService {
 
     @Transactional
     public BookCopy reserveAvailableCopy(Book book) {
-        List<BookCopy> copies = bookCopyRepository.findByBook_IdAndStatusOrderByCreatedAtAsc(
+        // Dùng pessimistic write lock để tránh race condition:
+        // chỉ một transaction được lấy bản sao này tại một thời điểm.
+        List<BookCopy> copies = bookCopyRepository.findAvailableForUpdate(
                 book.getId(),
                 BookCopyStatus.AVAILABLE);
         if (copies.isEmpty()) {
