@@ -71,6 +71,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST,
                                 "/api/payments/vnpay/memberships/checkout",
                                 "/api/payments/vnpay/memberships/premium").authenticated()
+                        .requestMatchers(HttpMethod.PUT, "/api/books/*/reviews/me").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/books").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PUT, "/api/books/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/books/**").hasRole("ADMIN")
@@ -96,6 +97,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/fines").hasAnyRole("ADMIN", "LIBRARIAN")
                         .requestMatchers(HttpMethod.POST, "/api/fines").hasRole("LIBRARIAN")
                         .requestMatchers(HttpMethod.GET, "/api/circulation/recent").hasAnyRole("ADMIN", "LIBRARIAN")
+                        .requestMatchers(HttpMethod.GET, "/api/books/*/reviews/me").authenticated()
                         .requestMatchers(HttpMethod.GET,
                                 "/api/books",
                                 "/api/books/**",

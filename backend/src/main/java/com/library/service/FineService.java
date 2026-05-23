@@ -14,9 +14,9 @@ import com.library.entity.Loan;
 import com.library.entity.LoanItem;
 import com.library.entity.NotificationType;
 import com.library.entity.User;
+import com.library.common.exception.BadRequestException;
 import com.library.repository.FineRepository;
 import com.library.repository.LoanRepository;
-import com.library.repository.UserRepository;
 
 import lombok.RequiredArgsConstructor;
 
@@ -25,7 +25,6 @@ import lombok.RequiredArgsConstructor;
 public class FineService {
 
     private final FineRepository fineRepository;
-    private final UserRepository userRepository;
     private final LoanRepository loanRepository;
     private final NotificationService notificationService;
 
@@ -41,13 +40,15 @@ public class FineService {
 
     @Transactional
     public Fine create(Integer userId, Integer loanId, BigDecimal amount, FineReason reason) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found."));
         Loan loan = loanRepository.findById(loanId)
                 .orElseThrow(() -> new RuntimeException("Loan not found."));
+        User borrower = loan.getBorrower();
+        if (borrower == null || (userId != null && !userId.equals(borrower.getId()))) {
+            throw new BadRequestException("Nguoi bi phat phai la ban doc cua don muon.");
+        }
 
         Fine fine = new Fine();
-        fine.setUser(user);
+        fine.setUser(borrower);
         fine.setLoan(loan);
         fine.setAmount(amount);
         fine.setReason(reason);
@@ -96,7 +97,9 @@ public class FineService {
                 "Thong bao phieu phat moi",
                 "Ban vua nhan mot phieu phat moi voi so tien " + fine.getAmount() + " VND.",
                 fine.getLoan() != null ? fine.getLoan().getId() : null,
-                fine.getLoanItem() != null && fine.getLoanItem().getBook() != null ? fine.getLoanItem().getBook().getId() : null
+                fine.getLoanItem() != null && fine.getLoanItem().getBookCopy() != null
+                        ? fine.getLoanItem().getBookCopy().getBook().getId()
+                        : null
         );
     }
 }

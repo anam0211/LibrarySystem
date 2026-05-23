@@ -62,8 +62,6 @@ function normalizeBookPayload(values) {
     pageCount: values.pageCount ? Number(values.pageCount) : null,
     description: values.description,
     keywords: values.keywords,
-    stockTotal: Number(values.stockTotal || 0),
-    stockAvailable: Number(values.stockAvailable || 0),
     status: values.status,
     authorIds: (values.authorIds || []).map(Number),
     categoryIds: (values.categoryIds || []).map(Number)
@@ -88,8 +86,6 @@ function renderBookStatusTag(status, stockAvailable) {
 
 const COPY_STATUS_OPTIONS = [
   { label: "AVAILABLE", value: "AVAILABLE" },
-  { label: "RESERVED", value: "RESERVED" },
-  { label: "BORROWED", value: "BORROWED" },
   { label: "DAMAGED", value: "DAMAGED" },
   { label: "LOST", value: "LOST" }
 ];
@@ -225,6 +221,7 @@ function BookCopiesPanel({ onStockChanged }) {
   }
 
   const selectedBook = books.find((book) => book.id === selectedBookId);
+  const copyStatusManagedByLoan = ["RESERVED", "BORROWED"].includes(editingCopy?.status);
 
   return (
     <Space direction="vertical" size={16} style={{ width: "100%" }}>
@@ -334,10 +331,15 @@ function BookCopiesPanel({ onStockChanged }) {
             <Input placeholder="VD: BOOK-1006-001" />
           </Form.Item>
           <Form.Item name="status" label="Trạng thái" rules={[{ required: true }]}>
-            <Select options={COPY_STATUS_OPTIONS} />
+            <Select
+              disabled={copyStatusManagedByLoan}
+              options={copyStatusManagedByLoan
+                ? [{ label: `${editingCopy.status} (theo đơn mượn)`, value: editingCopy.status }]
+                : COPY_STATUS_OPTIONS}
+            />
           </Form.Item>
           <Form.Item name="condition" label="Tình trạng" rules={[{ required: true }]}>
-            <Select options={COPY_CONDITION_OPTIONS} />
+            <Select disabled={copyStatusManagedByLoan} options={COPY_CONDITION_OPTIONS} />
           </Form.Item>
         </Form>
       </Modal>

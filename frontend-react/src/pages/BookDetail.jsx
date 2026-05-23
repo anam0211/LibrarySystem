@@ -10,8 +10,6 @@ import {
   Card,
   Descriptions,
   Empty,
-  Form,
-  Input,
   List,
   Rate,
   Space,
@@ -44,7 +42,6 @@ function isImage(asset) {
 export default function BookDetail({ session, onLogout }) {
   const { bookId } = useParams();
   const navigate = useNavigate();
-  const [form] = Form.useForm();
   const [loading, setLoading] = useState(true);
   const [book, setBook] = useState(null);
   const [media, setMedia] = useState([]);
@@ -133,23 +130,6 @@ export default function BookDetail({ session, onLogout }) {
     }
 
     setWishlist(await libraryGateway.toggleWishlist(session.id, book.id));
-  }
-
-  async function handleReview(values) {
-    if (!session) {
-      navigate("/login");
-      return;
-    }
-
-    await libraryGateway.addReview(book.id, {
-      userId: session.id,
-      userName: session.fullName || session.email,
-      rating: values.rating,
-      content: values.content
-    });
-    form.resetFields();
-    message.success("Đã gửi đánh giá.");
-    loadDetail();
   }
 
   return (
@@ -269,18 +249,10 @@ export default function BookDetail({ session, onLogout }) {
             )}
           </Card>
 
-          <Card className="glass-card" title="Review & Rating">
-            <Form form={form} layout="vertical" onFinish={handleReview} initialValues={{ rating: 5 }}>
-              <Form.Item name="rating" label="Đánh giá sao" rules={[{ required: true }]}>
-                <Rate />
-              </Form.Item>
-              <Form.Item name="content" label="Bình luận" rules={[{ required: true, message: "Nhập nội dung đánh giá" }]}>
-                <Input.TextArea rows={4} placeholder="Cảm nhận của bạn về cuốn sách..." />
-              </Form.Item>
-              <Button type="primary" htmlType="submit">
-                Gửi đánh giá
-              </Button>
-            </Form>
+          <Card className="glass-card" title="Đánh giá sách">
+            <Button type="primary" onClick={() => navigate(session ? "/reader/orders" : "/login")}>
+              Đánh giá từ đơn mượn hoàn tất
+            </Button>
           </Card>
 
           <Card className="glass-card" title={`Bình luận (${visibleReviews.length})`}>

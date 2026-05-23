@@ -35,17 +35,9 @@ public class LoanItem {
     @JoinColumn(name = "loan_id", nullable = false)
     private Loan loan;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "book_id", nullable = false)
-    private Book book;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "copy_id")
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "copy_id", nullable = false)
     private BookCopy bookCopy;
-
-    @Builder.Default
-    @Column(name = "qty", nullable = false)
-    private Integer qty = 1;
 
     @Builder.Default
     @Enumerated(EnumType.STRING)

@@ -18,6 +18,7 @@ public class LoanTrackingResponseDTO {
     private LocalDateTime createdAt;
     private LocalDateTime loanedAt;
     private LocalDateTime dueAt;
+    private LocalDateTime returnRequestedAt;
     private LocalDateTime closedAt;
     private List<LoanTrackingItemResponseDTO> items;
 }

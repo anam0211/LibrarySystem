@@ -47,12 +47,6 @@ public class BookValidator {
         }
     }
 
-    public void requireValidStock(int stockTotal, int stockAvailable) {
-        if (stockTotal < 0 || stockAvailable < 0 || stockAvailable > stockTotal) {
-            throw new AppException(BookErrorCode.BOOK_STOCK_INVALID);
-        }
-    }
-
     public void requireUniqueIsbn(String isbn, Integer currentBookId) {
         if (isbn == null) {
             return;
@@ -89,10 +83,6 @@ public class BookValidator {
 
         String text = value.trim();
         return text.isEmpty() ? null : text;
-    }
-
-    public int valueOrZero(Integer value) {
-        return value == null ? 0 : value;
     }
 
     private boolean hasAnyId(List<Integer> ids) {

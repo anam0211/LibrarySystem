@@ -13,6 +13,5 @@ public class LoanTrackingItemResponseDTO {
     private String copyBarcode;
     private String copyStatus;
     private String copyCondition;
-    private Integer quantity;
     private String status;
 }

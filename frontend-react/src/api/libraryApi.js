@@ -116,7 +116,9 @@ export const libraryApi = {
     listAll: () => apiClient.get("/reviews"),
     setHidden: (id, hidden) => apiClient.put(`/reviews/${id}/hidden`, { hidden }),
     byBook: (bookId) => apiClient.get(`/books/${bookId}/reviews`),
-    create: (bookId, payload) => apiClient.post(`/books/${bookId}/reviews`, payload)
+    mine: (bookId) => apiClient.get(`/books/${bookId}/reviews/me`),
+    create: (bookId, payload) => apiClient.post(`/books/${bookId}/reviews`, payload),
+    updateMine: (bookId, payload) => apiClient.put(`/books/${bookId}/reviews/me`, payload)
   },
   fines: {
     mine: () => apiClient.get("/fines/me"),

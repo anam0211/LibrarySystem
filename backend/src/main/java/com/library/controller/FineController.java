@@ -79,11 +79,11 @@ public class FineController {
         result.put("userName", fine.getUser() != null ? fine.getUser().getFullName() : null);
         result.put("loanId", fine.getLoan() != null ? fine.getLoan().getId() : null);
         result.put("loanItemId", fine.getLoanItem() != null ? fine.getLoanItem().getId() : null);
-        result.put("bookId", fine.getLoanItem() != null && fine.getLoanItem().getBook() != null
-                ? fine.getLoanItem().getBook().getId()
+        result.put("bookId", fine.getLoanItem() != null && fine.getLoanItem().getBookCopy() != null
+                ? fine.getLoanItem().getBookCopy().getBook().getId()
                 : null);
-        result.put("bookTitle", fine.getLoanItem() != null && fine.getLoanItem().getBook() != null
-                ? fine.getLoanItem().getBook().getTitle()
+        result.put("bookTitle", fine.getLoanItem() != null && fine.getLoanItem().getBookCopy() != null
+                ? fine.getLoanItem().getBookCopy().getBook().getTitle()
                 : null);
         result.put("copyId", fine.getLoanItem() != null && fine.getLoanItem().getBookCopy() != null
                 ? fine.getLoanItem().getBookCopy().getId()

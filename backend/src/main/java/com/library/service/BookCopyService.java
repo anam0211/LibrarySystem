@@ -8,10 +8,15 @@ import com.library.entity.Book;
 import com.library.entity.BookCopy;
 import com.library.entity.BookCopyCondition;
 import com.library.entity.BookCopyStatus;
+import com.library.entity.LoanItem;
+import com.library.entity.LoanItemStatus;
 import com.library.repository.BookCopyRepository;
 import com.library.repository.BookRepository;
 import com.library.repository.LoanItemRepository;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +24,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class BookCopyService {
+    private static final Set<LoanItemStatus> ACTIVE_LOAN_ITEM_STATUSES = EnumSet.of(
+            LoanItemStatus.PENDING,
+            LoanItemStatus.BORROWED,
+            LoanItemStatus.RETURNING);
+
     private final BookCopyRepository bookCopyRepository;
     private final BookRepository bookRepository;
     private final LoanItemRepository loanItemRepository;
@@ -44,7 +54,9 @@ public class BookCopyService {
         BookCopy copy = new BookCopy();
         copy.setBook(book);
         copy.setBarcode(barcode);
-        copy.setStatus(request.getStatus() == null ? BookCopyStatus.AVAILABLE : request.getStatus());
+        BookCopyStatus requestedStatus = request.getStatus() == null ? BookCopyStatus.AVAILABLE : request.getStatus();
+        rejectWorkflowOnlyStatus(requestedStatus);
+        copy.setStatus(requestedStatus);
         copy.setCondition(request.getCondition() == null ? BookCopyCondition.GOOD : request.getCondition());
 
         BookCopy savedCopy = bookCopyRepository.save(copy);
@@ -55,6 +67,9 @@ public class BookCopyService {
     @Transactional
     public BookCopyResponseDTO updateCopy(Integer copyId, BookCopyRequestDTO request) {
         BookCopy copy = findCopy(copyId);
+        Optional<LoanItem> activeLoanItem = loanItemRepository.findFirstByBookCopy_IdAndStatusInOrderByIdDesc(
+                copyId,
+                ACTIVE_LOAN_ITEM_STATUSES);
 
         String barcode = request == null ? null : trimToNull(request.getBarcode());
         if (barcode != null && !barcode.equals(copy.getBarcode())) {
@@ -64,10 +79,20 @@ public class BookCopyService {
             copy.setBarcode(barcode);
         }
 
-        if (request != null && request.getStatus() != null) {
+        if (activeLoanItem.isPresent()) {
+            BookCopyStatus managedStatus = statusForActiveLoanItem(activeLoanItem.get());
+            if (request != null && request.getStatus() != null && request.getStatus() != managedStatus) {
+                throw new BadRequestException("Ban sao dang nam trong don muon, trang thai duoc cap nhat tu dong.");
+            }
+            if (request != null && request.getCondition() != null && request.getCondition() != copy.getCondition()) {
+                throw new BadRequestException("Chi cap nhat tinh trang ban sao khi xac nhan tra sach.");
+            }
+            copy.setStatus(managedStatus);
+        } else if (request != null && request.getStatus() != null) {
+            rejectWorkflowOnlyStatus(request.getStatus());
             copy.setStatus(request.getStatus());
         }
-        if (request != null && request.getCondition() != null) {
+        if (activeLoanItem.isEmpty() && request != null && request.getCondition() != null) {
             copy.setCondition(request.getCondition());
         }
 
@@ -198,6 +223,18 @@ public class BookCopyService {
             throw new BadRequestException("Ma vach ban sao khong duoc de trong.");
         }
         return barcode;
+    }
+
+    private void rejectWorkflowOnlyStatus(BookCopyStatus status) {
+        if (status == BookCopyStatus.RESERVED || status == BookCopyStatus.BORROWED) {
+            throw new BadRequestException("Trang thai giu cho hoac dang muon chi duoc tao tu don muon.");
+        }
+    }
+
+    private BookCopyStatus statusForActiveLoanItem(LoanItem item) {
+        return item.getStatus() == LoanItemStatus.PENDING
+                ? BookCopyStatus.RESERVED
+                : BookCopyStatus.BORROWED;
     }
 
     private String trimToNull(String value) {

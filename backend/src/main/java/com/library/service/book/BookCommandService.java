@@ -67,12 +67,8 @@ public class BookCommandService {
         String title = bookValidator.requireTitle(request.getTitle());
         String isbn = bookValidator.trimToNull(request.getIsbn());
         Publisher publisher = bookValidator.requirePublisher(request.getPublisherId());
-        int stockTotal = bookValidator.valueOrZero(request.getStockTotal());
-        int stockAvailable = bookValidator.valueOrZero(request.getStockAvailable());
-
         bookValidator.requireAuthor(request.getAuthorIds());
         bookValidator.requireCategory(request.getCategoryIds());
-        bookValidator.requireValidStock(stockTotal, stockAvailable);
         bookValidator.requireUniqueIsbn(isbn, book.getId());
 
         book.setIsbn(isbn);
@@ -84,8 +80,6 @@ public class BookCommandService {
         book.setPageCount(request.getPageCount());
         book.setDescription(bookValidator.trimToNull(request.getDescription()));
         book.setKeywords(bookValidator.trimToNull(request.getKeywords()));
-        book.setStockTotal(stockTotal);
-        book.setStockAvailable(stockAvailable);
         book.setOriginalPrice(request.getOriginalPrice());
         book.setStatus(bookValidator.toBookStatus(request.getStatus()));
     }

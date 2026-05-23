@@ -28,8 +28,6 @@ const DEFAULT_VALUES = {
   pageCount: 0,
   description: "",
   keywords: "",
-  stockTotal: 1,
-  stockAvailable: 1,
   status: "ACTIVE",
   authorIds: [],
   categoryIds: []
@@ -158,15 +156,6 @@ export default function BookFormModal({
             <Input />
           </Form.Item>
           <Form.Item name="pageCount" label="Số trang">
-            <InputNumber min={0} style={{ width: "100%" }} />
-          </Form.Item>
-        </div>
-
-        <div className="section-grid">
-          <Form.Item name="stockTotal" label="Tổng tồn">
-            <InputNumber min={0} style={{ width: "100%" }} />
-          </Form.Item>
-          <Form.Item name="stockAvailable" label="Tồn khả dụng">
             <InputNumber min={0} style={{ width: "100%" }} />
           </Form.Item>
         </div>

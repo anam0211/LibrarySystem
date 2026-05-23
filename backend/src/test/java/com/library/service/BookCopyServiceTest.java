@@ -1,15 +1,23 @@
 package com.library.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.library.common.exception.BadRequestException;
+import com.library.dto.request.BookCopyRequestDTO;
 import com.library.entity.Book;
+import com.library.entity.BookCopy;
+import com.library.entity.BookCopyCondition;
 import com.library.entity.BookCopyStatus;
+import com.library.entity.LoanItem;
+import com.library.entity.LoanItemStatus;
 import com.library.repository.BookCopyRepository;
 import com.library.repository.BookRepository;
 import com.library.repository.LoanItemRepository;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -62,5 +70,28 @@ class BookCopyServiceTest {
         assertEquals(7, book.getStockTotal());
         assertEquals(4, book.getStockAvailable());
         verify(bookRepository, never()).save(book);
+    }
+
+    @Test
+    void updateCopyRejectsAvailableStatusWhileCopyIsBorrowed() {
+        BookCopy copy = new BookCopy();
+        copy.setId(12);
+        copy.setStatus(BookCopyStatus.BORROWED);
+        copy.setCondition(BookCopyCondition.GOOD);
+
+        LoanItem loanItem = new LoanItem();
+        loanItem.setStatus(LoanItemStatus.BORROWED);
+
+        BookCopyRequestDTO request = new BookCopyRequestDTO();
+        request.setStatus(BookCopyStatus.AVAILABLE);
+
+        when(bookCopyRepository.findById(12)).thenReturn(Optional.of(copy));
+        when(loanItemRepository.findFirstByBookCopy_IdAndStatusInOrderByIdDesc(
+                org.mockito.ArgumentMatchers.eq(12),
+                org.mockito.ArgumentMatchers.anyCollection()))
+                .thenReturn(Optional.of(loanItem));
+
+        assertThrows(BadRequestException.class, () -> bookCopyService.updateCopy(12, request));
+        verify(bookCopyRepository, never()).save(copy);
     }
 }

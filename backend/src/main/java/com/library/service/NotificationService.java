@@ -256,7 +256,7 @@ public class NotificationService {
         }
 
         List<String> titles = loan.getLoanItems().stream()
-                .map(item -> item.getBook() != null ? item.getBook().getTitle() : null)
+                .map(item -> item.getBookCopy() != null ? item.getBookCopy().getBook().getTitle() : null)
                 .filter(title -> title != null && !title.isBlank())
                 .distinct()
                 .limit(2)
@@ -267,7 +267,7 @@ public class NotificationService {
         }
 
         int totalBooks = (int) loan.getLoanItems().stream()
-                .map(item -> item.getBook() != null ? item.getBook().getId() : null)
+                .map(item -> item.getBookCopy() != null ? item.getBookCopy().getBook().getId() : null)
                 .filter(id -> id != null)
                 .distinct()
                 .count();
@@ -294,7 +294,7 @@ public class NotificationService {
             return null;
         }
         return loan.getLoanItems().stream()
-                .map(item -> item.getBook() != null ? item.getBook().getId() : null)
+                .map(item -> item.getBookCopy() != null ? item.getBookCopy().getBook().getId() : null)
                 .filter(id -> id != null)
                 .findFirst()
                 .orElse(null);

@@ -117,10 +117,10 @@ public class LoanService {
                     map.put("reader", loan.getBorrower().getFullName());
                     map.put("processId", loan.getProcessedBy() != null ? loan.getProcessedBy().getId() : null);
                     map.put("book", loan.getLoanItems().stream()
-                            .map(item -> item.getBook().getTitle())
+                            .map(item -> getItemBook(item).getTitle())
                             .collect(Collectors.joining(" • ")));
                     map.put("bookIds", loan.getLoanItems().stream()
-                            .map(item -> item.getBook().getId())
+                            .map(item -> getItemBook(item).getId())
                             .toList());
                     map.put("status", loan.getStatus().name());
                     map.put("deliveryMethod", loan.getDeliveryMethod().name());
@@ -130,6 +130,7 @@ public class LoanService {
                     map.put("createdAt", loan.getCreatedAt());
                     map.put("loanedAt", displayLoanedAt(loan));
                     map.put("dueDate", toDateString(loan.getDueAt()));
+                    map.put("returnRequestedAt", loan.getReturnRequestedAt());
                     return map;
                 })
                 .toList();
@@ -150,9 +151,16 @@ public class LoanService {
                     map.put("createdAt", loan.getCreatedAt());
                     map.put("loanedAt", displayLoanedAt(loan));
                     map.put("dueDate", toDateString(loan.getDueAt()));
+                    map.put("returnRequestedAt", loan.getReturnRequestedAt());
                     map.put("items", loan.getLoanItems().stream().map(item -> {
                         Map<String, Object> itemMap = new HashMap<>();
-                        itemMap.put("bookTitle", item.getBook().getTitle());
+                        itemMap.put("loanItemId", item.getId());
+                        itemMap.put("bookId", getItemBook(item).getId());
+                        itemMap.put("bookTitle", getItemBook(item).getTitle());
+                        itemMap.put("copyId", item.getBookCopy().getId());
+                        itemMap.put("copyBarcode", item.getBookCopy().getBarcode());
+                        itemMap.put("copyStatus", item.getBookCopy().getStatus().name());
+                        itemMap.put("copyCondition", item.getBookCopy().getCondition().name());
                         itemMap.put("itemStatus", item.getStatus().name());
                         itemMap.put("borrowedAt", item.getBorrowedAt());
                         return itemMap;
@@ -219,6 +227,7 @@ public class LoanService {
         }
 
         loan.setStatus(LoanStatus.RETURNING);
+        loan.setReturnRequestedAt(LocalDateTime.now());
         loan.getLoanItems().stream()
                 .filter(item -> item.getStatus() == LoanItemStatus.BORROWED)
                 .forEach(item -> item.setStatus(LoanItemStatus.RETURNING));
@@ -238,7 +247,6 @@ public class LoanService {
             throw new BadRequestException("Chi co the xac nhan tra sach cho don OPEN, OVERDUE hoac RETURNING.");
         }
 
-        normalizeLoanItemsToUnitCopies(loan);
         List<LoanItem> activeItems = getReturnableItems(loan);
         List<BookCondition> conditions = resolveConditions(request);
 
@@ -256,24 +264,24 @@ public class LoanService {
             item.setReturnedAt(now);
             if (condition == BookCondition.OK) {
                 item.setStatus(LoanItemStatus.RETURNED);
-                returnCopyOrStock(item, BookCopyCondition.GOOD);
-                createLateFineIfNeeded(item);
+                returnCopy(item, BookCopyCondition.GOOD);
+                createLateFineIfNeeded(loan, item);
                 continue;
             }
 
             if (condition == BookCondition.DAMAGED) {
                 item.setStatus(LoanItemStatus.DAMAGED);
-                returnCopyOrStock(item, BookCopyCondition.DAMAGED);
+                returnCopy(item, BookCopyCondition.DAMAGED);
                 createFineIfNeeded(item, FineReason.DAMAGED_BOOK, BigDecimal.valueOf(50000));
             } else {
                 item.setStatus(LoanItemStatus.LOST);
-                returnCopyOrStock(item, BookCopyCondition.LOST);
+                returnCopy(item, BookCopyCondition.LOST);
                 createFineIfNeeded(item, FineReason.LOST_BOOK, BigDecimal.valueOf(100000));
             }
 
-            createLateFineIfNeeded(item);
+            createLateFineIfNeeded(loan, item);
 
-            issueLogs.add(item.getBook().getTitle() + "=" + condition.name());
+            issueLogs.add(getItemBook(item).getTitle() + "=" + condition.name());
         }
 
         if (!issueLogs.isEmpty()) {
@@ -338,7 +346,7 @@ public class LoanService {
             if (itemStatus == LoanItemStatus.BORROWED) {
                 bookCopyService.markBorrowed(copy);
             }
-            loan.addLoanItem(buildLoanItem(book, copy, itemStatus, borrowedAt, dueAt));
+            loan.addLoanItem(buildLoanItem(copy, itemStatus, borrowedAt, dueAt));
         }
     }
 
@@ -366,7 +374,7 @@ public class LoanService {
                     if (itemStatus == LoanItemStatus.BORROWED) {
                         bookCopyService.markBorrowed(copy);
                     }
-                    loan.addLoanItem(buildLoanItem(book, copy, itemStatus, borrowedAt, dueAt));
+                    loan.addLoanItem(buildLoanItem(copy, itemStatus, borrowedAt, dueAt));
                 }
             }
             return;
@@ -391,16 +399,13 @@ public class LoanService {
     }
 
     private LoanItem buildLoanItem(
-            Book book,
             BookCopy copy,
             LoanItemStatus itemStatus,
             LocalDateTime borrowedAt,
             LocalDateTime dueAt
     ) {
         return LoanItem.builder()
-                .book(book)
                 .bookCopy(copy)
-                .qty(1)
                 .status(itemStatus)
                 .borrowedAt(borrowedAt)
                 .dueAt(dueAt)
@@ -414,12 +419,7 @@ public class LoanService {
             return copy;
         }
 
-        int available = book.getStockAvailable() == null ? 0 : book.getStockAvailable();
-        if (available < 1) {
-            throw new BadRequestException("Sach '" + book.getTitle() + "' da het hoac khong du ton kho.");
-        }
-        book.setStockAvailable(available - 1);
-        return null;
+        throw new BadRequestException("Sach '" + book.getTitle() + "' khong co ban sao kha dung de muon.");
     }
 
     private void ensureBookCanBeBorrowed(Book book) {
@@ -429,39 +429,30 @@ public class LoanService {
         }
     }
 
-    private void incrementStock(Book book) {
-        int available = book.getStockAvailable() == null ? 0 : book.getStockAvailable();
-        book.setStockAvailable(available + 1);
+    private void releaseCopy(LoanItem item) {
+        bookCopyService.releaseCopy(item.getBookCopy());
     }
 
-    private void releaseCopyOrStock(LoanItem item) {
-        if (item.getBookCopy() != null) {
-            bookCopyService.releaseCopy(item.getBookCopy());
+    private void returnCopy(LoanItem item, BookCopyCondition condition) {
+        bookCopyService.markReturned(item.getBookCopy(), condition);
+    }
+
+    private void createLateFineIfNeeded(Loan loan, LoanItem item) {
+        LocalDateTime effectiveReturnAt = resolveEffectiveReturnAt(loan, item);
+        if (item.getDueAt() == null || effectiveReturnAt == null) {
             return;
         }
 
-        incrementStock(item.getBook());
-    }
-
-    private void returnCopyOrStock(LoanItem item, BookCopyCondition condition) {
-        if (item.getBookCopy() != null) {
-            bookCopyService.markReturned(item.getBookCopy(), condition);
-            return;
-        }
-
-        if (condition == BookCopyCondition.GOOD) {
-            incrementStock(item.getBook());
-        }
-    }
-
-    private void createLateFineIfNeeded(LoanItem item) {
-        if (item.getDueAt() == null || item.getReturnedAt() == null) {
-            return;
-        }
-
-        if (item.getReturnedAt().isAfter(item.getDueAt())) {
+        if (effectiveReturnAt.isAfter(item.getDueAt())) {
             createFineIfNeeded(item, FineReason.LATE_RETURN, BigDecimal.valueOf(10000));
         }
+    }
+
+    private LocalDateTime resolveEffectiveReturnAt(Loan loan, LoanItem item) {
+        if (isHomeDelivery(loan.getDeliveryMethod()) && loan.getReturnRequestedAt() != null) {
+            return loan.getReturnRequestedAt();
+        }
+        return item.getReturnedAt();
     }
 
     private void createFineIfNeeded(LoanItem item, FineReason reason, BigDecimal amount) {
@@ -486,41 +477,17 @@ public class LoanService {
         loan.getLoanItems().stream()
                 .filter(item -> STOCK_HELD_ITEM_STATUSES.contains(item.getStatus()))
                 .forEach(item -> {
-                    releaseCopyOrStock(item);
+                    releaseCopy(item);
                     item.setStatus(LoanItemStatus.RETURNED);
                     item.setReturnedAt(releasedAt);
                 });
-    }
-
-    private void normalizeLoanItemsToUnitCopies(Loan loan) {
-        List<LoanItem> extraItems = new ArrayList<>();
-        for (LoanItem item : new ArrayList<>(loan.getLoanItems())) {
-            int quantity = item.getQty() == null ? 1 : item.getQty();
-            if (quantity <= 1) {
-                continue;
-            }
-
-            item.setQty(1);
-            for (int index = 1; index < quantity; index++) {
-                extraItems.add(LoanItem.builder()
-                        .book(item.getBook())
-                        .qty(1)
-                        .status(item.getStatus())
-                        .borrowedAt(item.getBorrowedAt())
-                        .dueAt(item.getDueAt())
-                        .returnedAt(item.getReturnedAt())
-                        .build());
-            }
-        }
-
-        extraItems.forEach(loan::addLoanItem);
     }
 
     private List<LoanItem> getReturnableItems(Loan loan) {
         return loan.getLoanItems().stream()
                 .filter(item -> RETURNABLE_ITEM_STATUSES.contains(item.getStatus()))
                 .sorted(Comparator
-                        .comparing((LoanItem item) -> item.getBook().getId())
+                        .comparing((LoanItem item) -> getItemBook(item).getId())
                         .thenComparing(item -> item.getId() == null ? Integer.MAX_VALUE : item.getId()))
                 .toList();
     }
@@ -628,20 +595,19 @@ public class LoanService {
                         && loan.getStatus() != LoanStatus.EXPIRED)
                 .mapToInt(loan -> loan.getLoanItems().stream()
                         .filter(item -> !isTerminalItemStatus(item.getStatus()))
-                        .mapToInt(item -> item.getQty() != null ? item.getQty() : 1)
+                        .mapToInt(item -> 1)
                         .sum())
                 .sum();
     }
 
     private void closeLoanAsReturned(Loan loan, LocalDateTime returnedAt) {
-        normalizeLoanItemsToUnitCopies(loan);
         List<LoanItem> activeItems = getReturnableItems(loan);
 
         for (LoanItem item : activeItems) {
             item.setStatus(LoanItemStatus.RETURNED);
             item.setReturnedAt(returnedAt);
-            returnCopyOrStock(item, BookCopyCondition.GOOD);
-            createLateFineIfNeeded(item);
+            returnCopy(item, BookCopyCondition.GOOD);
+            createLateFineIfNeeded(loan, item);
         }
 
         loan.setClosedAt(returnedAt);
@@ -673,14 +639,13 @@ public class LoanService {
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy sách với mã ID " + bookId + "."));
     }
 
-    private Book findBookById(Integer bookId) {
-        return bookRepository.findById(bookId)
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy sách với mã ID " + bookId + "."));
-    }
-
     private Loan findLoanById(Integer loanId) {
         return loanRepository.findById(loanId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy phiếu mượn."));
+    }
+
+    private Book getItemBook(LoanItem item) {
+        return item.getBookCopy().getBook();
     }
 
     private LoanStatus resolveLoanStatus(String value) {
@@ -755,6 +720,7 @@ public class LoanService {
                 .createdAt(loan.getCreatedAt())
                 .loanedAt(displayLoanedAt(loan))
                 .dueAt(loan.getDueAt())
+                .returnRequestedAt(loan.getReturnRequestedAt())
                 .closedAt(loan.getClosedAt())
                 .items(toTrackingItems(loan))
                 .build();
@@ -774,6 +740,7 @@ public class LoanService {
                 .createdAt(loan.getCreatedAt())
                 .loanedAt(displayLoanedAt(loan))
                 .dueAt(loan.getDueAt())
+                .returnRequestedAt(loan.getReturnRequestedAt())
                 .borrowerCardCode(buildBorrowerCardCode(loan.getBorrower()))
                 .borrowerStudentCode(loan.getBorrower().getIdCardNumber())
                 .borrowerMembershipCode(loan.getBorrower().getMembership() != null
@@ -797,21 +764,20 @@ public class LoanService {
     private List<LoanTrackingItemResponseDTO> toTrackingItems(Loan loan) {
         return loan.getLoanItems().stream()
                 .sorted(Comparator
-                        .comparing((LoanItem item) -> item.getBook().getId())
+                        .comparing((LoanItem item) -> getItemBook(item).getId())
                         .thenComparing(item -> item.getId() == null ? Integer.MAX_VALUE : item.getId()))
                 .map(item -> LoanTrackingItemResponseDTO.builder()
                         .loanItemId(item.getId())
-                        .bookId(item.getBook().getId())
-                        .bookTitle(item.getBook().getTitle())
-                        .copyId(item.getBookCopy() != null ? item.getBookCopy().getId() : null)
-                        .copyBarcode(item.getBookCopy() != null ? item.getBookCopy().getBarcode() : null)
-                        .copyStatus(item.getBookCopy() != null && item.getBookCopy().getStatus() != null
+                        .bookId(getItemBook(item).getId())
+                        .bookTitle(getItemBook(item).getTitle())
+                        .copyId(item.getBookCopy().getId())
+                        .copyBarcode(item.getBookCopy().getBarcode())
+                        .copyStatus(item.getBookCopy().getStatus() != null
                                 ? item.getBookCopy().getStatus().name()
                                 : null)
-                        .copyCondition(item.getBookCopy() != null && item.getBookCopy().getCondition() != null
+                        .copyCondition(item.getBookCopy().getCondition() != null
                                 ? item.getBookCopy().getCondition().name()
                                 : null)
-                        .quantity(item.getQty())
                         .status(item.getStatus().name())
                 .build())
                 .toList();

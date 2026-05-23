@@ -10,6 +10,7 @@ import {
   ReadOutlined,
   RollbackOutlined,
   ShoppingCartOutlined,
+  StarOutlined,
   TruckOutlined,
   UserOutlined,
   UploadOutlined,
@@ -29,6 +30,7 @@ import {
   Modal,
   Popconfirm,
   QRCode,
+  Rate,
   Row,
   Select,
   Space,
@@ -241,6 +243,16 @@ function summarizeLoanTitle(loan) {
   const text = titles.length ? titles.join(", ") : String(loan?.bookTitle || "-");
 
   return text.length > 72 ? `${text.slice(0, 72).trim()}...` : text;
+}
+
+function uniqueLoanBooks(loan) {
+  const uniqueBooks = new Map();
+  (Array.isArray(loan?.books) ? loan.books : []).forEach((book) => {
+    if (Number.isInteger(book?.id) && book.id > 0 && !uniqueBooks.has(String(book.id))) {
+      uniqueBooks.set(String(book.id), book);
+    }
+  });
+  return [...uniqueBooks.values()];
 }
 
 function useReaderReturnAction(loadReader, onDone) {
@@ -481,10 +493,113 @@ export function ReaderAccount({ session, onSessionUpdate }) {
 
 export function ReaderOrders({ session }) {
   const { loans, fines, loadReader } = useReaderData(session);
+  const [reviewForm] = Form.useForm();
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [selectedLoan, setSelectedLoan] = useState(null);
+  const [reviewLoan, setReviewLoan] = useState(null);
+  const [submittingReview, setSubmittingReview] = useState(false);
+  const [loadingReviews, setLoadingReviews] = useState(false);
+  const [myReviewsByBookId, setMyReviewsByBookId] = useState({});
   const { returningLoanId, handleRequestReturn } = useReaderReturnAction(loadReader, () => setSelectedLoan(null));
+  const reviewBooks = uniqueLoanBooks(reviewLoan);
+  const selectedReviewBookId = Form.useWatch("bookId", reviewForm);
+  const existingReview = myReviewsByBookId[String(selectedReviewBookId)] || null;
+  const reviewableBooks = useMemo(() => {
+    const booksById = new Map();
+    loans.filter((loan) => readerLoanStatus(loan) === "RETURNED").forEach((loan) => {
+      uniqueLoanBooks(loan).forEach((book) => booksById.set(String(book.id), book));
+    });
+    return [...booksById.values()];
+  }, [loans]);
+
+  useEffect(() => {
+    let active = true;
+
+    if (!reviewableBooks.length) {
+      setMyReviewsByBookId({});
+      return undefined;
+    }
+
+    setLoadingReviews(true);
+    Promise.all(reviewableBooks.map(async (book) => [String(book.id), await libraryGateway.getMyReview(book.id)]))
+      .then((entries) => {
+        if (active) {
+          setMyReviewsByBookId(Object.fromEntries(entries));
+        }
+      })
+      .catch((error) => {
+        if (active) {
+          message.error(error?.message || "Không thể tải trạng thái đánh giá.");
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoadingReviews(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [reviewableBooks]);
+
+  async function openReviewModal(loan) {
+    const books = uniqueLoanBooks(loan);
+    if (!books.length) {
+      message.error("Đơn mượn không có sách hợp lệ để đánh giá.");
+      return;
+    }
+    setLoadingReviews(true);
+    try {
+      const entries = await Promise.all(books.map(async (book) => [String(book.id), await libraryGateway.getMyReview(book.id)]));
+      const loanReviews = Object.fromEntries(entries);
+      setMyReviewsByBookId((reviews) => ({ ...reviews, ...loanReviews }));
+      setReviewLoan(loan);
+      populateReviewForm(books[0].id, loanReviews);
+    } catch (error) {
+      message.error(error?.message || "Không thể tải đánh giá hiện tại.");
+    } finally {
+      setLoadingReviews(false);
+    }
+  }
+
+  function populateReviewForm(bookId, reviews = myReviewsByBookId) {
+    const review = reviews[String(bookId)];
+    reviewForm.setFieldsValue({
+      bookId,
+      rating: review?.rating || 5,
+      comment: review?.content || ""
+    });
+  }
+
+  async function handleSubmitReview(values) {
+    if (!Number.isInteger(values.bookId) || values.bookId < 1) {
+      message.error("Không xác định được sách cần đánh giá. Vui lòng tải lại danh sách đơn.");
+      return;
+    }
+    setSubmittingReview(true);
+    try {
+      const currentReview = myReviewsByBookId[String(values.bookId)];
+      const savedReview = currentReview
+        ? await libraryGateway.updateReview(values.bookId, {
+            rating: values.rating,
+            comment: values.comment
+          })
+        : await libraryGateway.addReview(values.bookId, {
+            rating: values.rating,
+            comment: values.comment
+          });
+      setMyReviewsByBookId((reviews) => ({ ...reviews, [String(values.bookId)]: savedReview }));
+      message.success(currentReview ? "Đã cập nhật đánh giá sách." : "Đánh giá sách thành công.");
+      reviewForm.resetFields();
+      setReviewLoan(null);
+    } catch (error) {
+      message.error(error?.message || "Không thể gửi đánh giá sách.");
+    } finally {
+      setSubmittingReview(false);
+    }
+  }
 
   const filteredLoans = useMemo(() => loans.filter((loan) => {
     const status = readerLoanStatus(loan);
@@ -502,16 +617,30 @@ export function ReaderOrders({ session }) {
     { title: "Trạng thái", width: 140, render: (_, loan) => <StatusBadge status={readerLoanStatus(loan)} /> },
     {
       title: "Hành động",
-      width: 210,
+      width: 310,
       render: (_, loan) => {
         const status = readerLoanStatus(loan);
+        const books = uniqueLoanBooks(loan);
+        const reviewedCount = books.filter((book) => myReviewsByBookId[String(book.id)]).length;
         return (
-          <Space>
+          <Space wrap>
             <Button onClick={() => setSelectedLoan(loan)}>Xem chi tiết</Button>
             {["BORROWING", "OVERDUE"].includes(status) ? (
               <Button type="primary" icon={<RollbackOutlined />} loading={returningLoanId === loan.id} onClick={() => handleRequestReturn(loan)}>
                 Yêu cầu trả
               </Button>
+            ) : null}
+            {status === "RETURNED" ? (
+              <>
+                {reviewedCount ? (
+                  <Tag color="success" icon={<CheckCircleOutlined />}>
+                    {reviewedCount === books.length ? "Đã đánh giá" : `Đã đánh giá ${reviewedCount}/${books.length}`}
+                  </Tag>
+                ) : null}
+                <Button icon={<StarOutlined />} loading={loadingReviews} onClick={() => openReviewModal(loan)}>
+                  {reviewedCount === books.length && books.length ? "Sửa đánh giá" : reviewedCount ? "Đánh giá / Sửa" : "Đánh giá"}
+                </Button>
+              </>
             ) : null}
           </Space>
         );
@@ -536,9 +665,40 @@ export function ReaderOrders({ session }) {
             {Object.entries(STATUS_META).map(([status, [, label]]) => <Select.Option key={status} value={status}>{label}</Select.Option>)}
           </Select>
         </Space>
-        <Table rowKey="id" columns={columns} dataSource={filteredLoans} scroll={{ x: 900 }} pagination={{ pageSize: 5, showSizeChanger: true, pageSizeOptions: [5, 10] }} />
+        <Table rowKey="id" columns={columns} dataSource={filteredLoans} scroll={{ x: 1000 }} pagination={{ pageSize: 5, showSizeChanger: true, pageSizeOptions: [5, 10] }} />
       </Card>
       <BorrowOrderDetailDrawer loan={selectedLoan} fines={fines} open={Boolean(selectedLoan)} onClose={() => setSelectedLoan(null)} onRequestReturn={handleRequestReturn} returningLoanId={returningLoanId} />
+      <Modal
+        title={reviewLoan ? `${existingReview ? "Sửa đánh giá" : "Đánh giá sách"} từ đơn #${reviewLoan.id}` : "Đánh giá sách"}
+        open={Boolean(reviewLoan)}
+        onCancel={() => {
+          setReviewLoan(null);
+          reviewForm.resetFields();
+        }}
+        footer={null}
+        destroyOnHidden
+      >
+        <Form form={reviewForm} layout="vertical" onFinish={handleSubmitReview}>
+          <Form.Item name="bookId" label="Sách" rules={[{ required: true, message: "Chọn sách cần đánh giá." }]}>
+            <Select
+              onChange={(bookId) => populateReviewForm(bookId)}
+              options={reviewBooks.map((book) => ({
+                value: book.id,
+                label: `${book.title || `Sách #${book.id}`}${myReviewsByBookId[String(book.id)] ? " (Đã đánh giá)" : ""}`
+              }))}
+            />
+          </Form.Item>
+          <Form.Item name="rating" label="Điểm đánh giá" rules={[{ required: true, message: "Chọn số sao đánh giá." }]}>
+            <Rate />
+          </Form.Item>
+          <Form.Item name="comment" label="Nhận xét" rules={[{ required: true, message: "Nhập nhận xét về sách." }]}>
+            <Input.TextArea rows={4} maxLength={1000} showCount />
+          </Form.Item>
+          <Button type="primary" htmlType="submit" loading={submittingReview} icon={<StarOutlined />}>
+            {existingReview ? "Cập nhật đánh giá" : "Gửi đánh giá"}
+          </Button>
+        </Form>
+      </Modal>
     </div>
   );
 }

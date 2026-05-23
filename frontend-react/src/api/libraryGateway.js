@@ -245,8 +245,8 @@ function mapLoanStatus(rawLoan = {}) {
     OVERDUE: "OVERDUE",
     RETURNING: "RETURNING",
     CLOSED: "RETURNED",
-    EXPIRED: "OVERDUE",
-    CANCELLED: "RETURNED"
+    EXPIRED: "CANCELLED",
+    CANCELLED: "CANCELLED"
   };
 
   return map[status] || "BORROWING";
@@ -344,6 +344,7 @@ function normalizeLoan(rawLoan = {}, books = []) {
     createdAt: rawLoan.createdAt || rawLoan.borrowDate || rawLoan.createdDate || "",
     loanedAt: rawLoan.loanedAt || rawLoan.borrowedAt || firstItemBorrowedAt || rawLoan.borrowDate || rawLoan.createdAt || rawLoan.createdDate || "",
     dueDate: rawLoan.dueDate || rawLoan.returnDueDate || rawLoan.dueAt || "",
+    returnRequestedAt: rawLoan.returnRequestedAt || "",
     deliveryFee: Number(rawLoan.deliveryFee || 0),
     tracking: Array.isArray(rawLoan.tracking) && rawLoan.tracking.length
       ? rawLoan.tracking
@@ -650,9 +651,38 @@ export const libraryGateway = {
   },
 
   async addReview(bookId, review) {
+    const normalizedBookId = Number(bookId);
+    if (!Number.isInteger(normalizedBookId) || normalizedBookId < 1) {
+      throw new Error("Không xác định được sách cần đánh giá.");
+    }
     return useBackend(
-      async () => normalizeReview(await libraryApi.reviews.create(bookId, {
-        userId: review.userId,
+      async () => normalizeReview(await libraryApi.reviews.create(normalizedBookId, {
+        rating: review.rating,
+        comment: review.content || review.comment
+      }))
+    );
+  },
+
+  async getMyReview(bookId) {
+    const normalizedBookId = Number(bookId);
+    if (!Number.isInteger(normalizedBookId) || normalizedBookId < 1) {
+      return null;
+    }
+    return useBackend(
+      async () => {
+        const review = await libraryApi.reviews.mine(normalizedBookId);
+        return review?.id ? normalizeReview(review) : null;
+      }
+    );
+  },
+
+  async updateReview(bookId, review) {
+    const normalizedBookId = Number(bookId);
+    if (!Number.isInteger(normalizedBookId) || normalizedBookId < 1) {
+      throw new Error("Không xác định được sách cần đánh giá.");
+    }
+    return useBackend(
+      async () => normalizeReview(await libraryApi.reviews.updateMine(normalizedBookId, {
         rating: review.rating,
         comment: review.content || review.comment
       }))

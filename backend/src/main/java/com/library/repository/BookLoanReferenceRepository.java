@@ -14,7 +14,12 @@ public class BookLoanReferenceRepository {
 
     public long countLoanItemsByBookId(Integer bookId) {
         Long count = jdbcTemplate.queryForObject(
-                "select count(*) from loan_items where book_id = ?",
+                """
+                select count(*)
+                from loan_items li
+                join book_copies bc on bc.copy_id = li.copy_id
+                where bc.book_id = ?
+                """,
                 Long.class,
                 bookId
         );
@@ -25,10 +30,11 @@ public class BookLoanReferenceRepository {
     public long countBorrowedCopiesByBookId(Integer bookId) {
         Number count = jdbcTemplate.queryForObject(
                 """
-                select coalesce(sum(coalesce(li.qty, 1)), 0)
+                select count(*)
                 from loan_items li
                 join loans l on l.loan_id = li.loan_id
-                where li.book_id = ?
+                join book_copies bc on bc.copy_id = li.copy_id
+                where bc.book_id = ?
                   and l.status in ('OPEN', 'OVERDUE', 'RETURNING', 'CLOSED')
                 """,
                 Number.class,

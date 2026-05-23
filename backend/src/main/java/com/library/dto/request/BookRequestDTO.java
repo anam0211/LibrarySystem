@@ -23,8 +23,6 @@ public class BookRequestDTO {
     Integer pageCount;
     String description;
     String keywords;
-    Integer stockTotal;
-    Integer stockAvailable;
     BigDecimal originalPrice;
     String status;
     List<Integer> authorIds;

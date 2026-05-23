@@ -68,6 +68,9 @@ public class Loan {
     @Column(name = "due_at")
     private LocalDateTime dueAt;
 
+    @Column(name = "return_requested_at")
+    private LocalDateTime returnRequestedAt;
+
     @Column(name = "closed_at")
     private LocalDateTime closedAt;
 

@@ -88,8 +88,8 @@ public class GlobalExceptionHandler {
             String message = current.getMessage();
             if (message != null) {
                 String normalizedMessage = message.toLowerCase();
-                if (normalizedMessage.contains("fk__loan_item__book")
-                        || (normalizedMessage.contains("loan_items") && normalizedMessage.contains("book_id"))) {
+                if (normalizedMessage.contains("fk_book_copies_book")
+                        || (normalizedMessage.contains("book_copies") && normalizedMessage.contains("book_id"))) {
                     return true;
                 }
             }

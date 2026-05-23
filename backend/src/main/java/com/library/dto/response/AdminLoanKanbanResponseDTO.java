@@ -21,6 +21,7 @@ public class AdminLoanKanbanResponseDTO {
     private LocalDateTime createdAt;
     private LocalDateTime loanedAt;
     private LocalDateTime dueAt;
+    private LocalDateTime returnRequestedAt;
     private String borrowerCardCode;
     private String borrowerStudentCode;
     private String borrowerMembershipCode;
