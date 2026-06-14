@@ -46,6 +46,7 @@ public class BookCopyService {
         Book book = bookRepository.findById(bookId)
                 .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay sach."));
 
+        CopyRequestState requestState = resolveCopyRequestState(request);
         String barcode = requireBarcode(request);
         if (bookCopyRepository.existsByBarcode(barcode)) {
             throw new BadRequestException("Ma vach ban sao da ton tai.");
@@ -54,10 +55,12 @@ public class BookCopyService {
         BookCopy copy = new BookCopy();
         copy.setBook(book);
         copy.setBarcode(barcode);
-        BookCopyStatus requestedStatus = request.getStatus() == null ? BookCopyStatus.AVAILABLE : request.getStatus();
+        BookCopyStatus requestedStatus = requestState.statusProvided()
+                ? requestState.status()
+                : statusForCondition(requestState.condition());
         rejectWorkflowOnlyStatus(requestedStatus);
         copy.setStatus(requestedStatus);
-        copy.setCondition(request.getCondition() == null ? BookCopyCondition.GOOD : request.getCondition());
+        copy.setCondition(requestState.condition());
 
         BookCopy savedCopy = bookCopyRepository.save(copy);
         syncBookStock(book);
@@ -67,6 +70,7 @@ public class BookCopyService {
     @Transactional
     public BookCopyResponseDTO updateCopy(Integer copyId, BookCopyRequestDTO request) {
         BookCopy copy = findCopy(copyId);
+        CopyRequestState requestState = resolveCopyRequestState(request);
         Optional<LoanItem> activeLoanItem = loanItemRepository.findFirstByBookCopy_IdAndStatusInOrderByIdDesc(
                 copyId,
                 ACTIVE_LOAN_ITEM_STATUSES);
@@ -81,19 +85,21 @@ public class BookCopyService {
 
         if (activeLoanItem.isPresent()) {
             BookCopyStatus managedStatus = statusForActiveLoanItem(activeLoanItem.get());
-            if (request != null && request.getStatus() != null && request.getStatus() != managedStatus) {
+            if (requestState.statusProvided() && requestState.status() != managedStatus) {
                 throw new BadRequestException("Ban sao dang nam trong don muon, trang thai duoc cap nhat tu dong.");
             }
-            if (request != null && request.getCondition() != null && request.getCondition() != copy.getCondition()) {
+            if (requestState.conditionProvided() && requestState.condition() != copy.getCondition()) {
                 throw new BadRequestException("Chi cap nhat tinh trang ban sao khi xac nhan tra sach.");
             }
             copy.setStatus(managedStatus);
-        } else if (request != null && request.getStatus() != null) {
-            rejectWorkflowOnlyStatus(request.getStatus());
-            copy.setStatus(request.getStatus());
-        }
-        if (activeLoanItem.isEmpty() && request != null && request.getCondition() != null) {
-            copy.setCondition(request.getCondition());
+        } else {
+            if (requestState.statusProvided()) {
+                rejectWorkflowOnlyStatus(requestState.status());
+                copy.setStatus(requestState.status());
+            }
+            if (requestState.conditionProvided()) {
+                copy.setCondition(requestState.condition());
+            }
         }
 
         BookCopy savedCopy = bookCopyRepository.save(copy);
@@ -122,7 +128,8 @@ public class BookCopyService {
         // chỉ một transaction được lấy bản sao này tại một thời điểm.
         List<BookCopy> copies = bookCopyRepository.findAvailableForUpdate(
                 book.getId(),
-                BookCopyStatus.AVAILABLE);
+                BookCopyStatus.AVAILABLE,
+                BookCopyCondition.GOOD);
         if (copies.isEmpty()) {
             return null;
         }
@@ -163,14 +170,14 @@ public class BookCopyService {
             return;
         }
 
-        copy.setCondition(condition);
-        if (condition == BookCopyCondition.GOOD) {
-            copy.setStatus(BookCopyStatus.AVAILABLE);
-        } else if (condition == BookCopyCondition.DAMAGED) {
+        if (condition == BookCopyCondition.DAMAGED) {
             copy.setStatus(BookCopyStatus.DAMAGED);
-        } else {
+        } else if (condition == BookCopyCondition.LOST) {
             copy.setStatus(BookCopyStatus.LOST);
+        } else {
+            copy.setStatus(BookCopyStatus.AVAILABLE);
         }
+        copy.setCondition(condition == null ? BookCopyCondition.GOOD : condition);
         bookCopyRepository.save(copy);
         syncBookStock(copy.getBook());
     }
@@ -186,7 +193,10 @@ public class BookCopyService {
             return;
         }
 
-        long availableCopies = bookCopyRepository.countByBook_IdAndStatus(book.getId(), BookCopyStatus.AVAILABLE);
+        long availableCopies = bookCopyRepository.countByBook_IdAndStatusAndCondition(
+                book.getId(),
+                BookCopyStatus.AVAILABLE,
+                BookCopyCondition.GOOD);
         book.setStockTotal(toInt(totalCopies));
         book.setStockAvailable(toInt(availableCopies));
         bookRepository.save(book);
@@ -231,6 +241,64 @@ public class BookCopyService {
         }
     }
 
+    private CopyRequestState resolveCopyRequestState(BookCopyRequestDTO request) {
+        if (request == null) {
+            return new CopyRequestState(null, false, null, false);
+        }
+
+        BookCopyStatus status = request.getStatus();
+        BookCopyCondition condition = request.getCondition();
+
+        if (status == null && condition == null) {
+            return new CopyRequestState(null, false, BookCopyCondition.GOOD, false);
+        }
+
+        if (condition == null) {
+            condition = conditionForStatus(status);
+        }
+
+        if (status == null) {
+            status = statusForCondition(condition);
+            return new CopyRequestState(status, true, condition, true);
+        }
+
+        BookCopyCondition expectedCondition = conditionForStatus(status);
+        if (expectedCondition != null && condition != expectedCondition) {
+            if (condition == BookCopyCondition.GOOD || status == BookCopyStatus.AVAILABLE) {
+                condition = expectedCondition == BookCopyCondition.GOOD ? condition : expectedCondition;
+                status = statusForCondition(condition);
+            } else {
+                throw new BadRequestException("Trang thai va tinh trang ban sao khong khop.");
+            }
+        }
+
+        return new CopyRequestState(status, true, condition, true);
+    }
+
+    private BookCopyCondition conditionForStatus(BookCopyStatus status) {
+        if (status == null) {
+            return BookCopyCondition.GOOD;
+        }
+
+        return switch (status) {
+            case AVAILABLE, RESERVED, BORROWED -> BookCopyCondition.GOOD;
+            case DAMAGED -> BookCopyCondition.DAMAGED;
+            case LOST -> BookCopyCondition.LOST;
+        };
+    }
+
+    private BookCopyStatus statusForCondition(BookCopyCondition condition) {
+        if (condition == null) {
+            return BookCopyStatus.AVAILABLE;
+        }
+
+        return switch (condition) {
+            case GOOD -> BookCopyStatus.AVAILABLE;
+            case DAMAGED -> BookCopyStatus.DAMAGED;
+            case LOST -> BookCopyStatus.LOST;
+        };
+    }
+
     private BookCopyStatus statusForActiveLoanItem(LoanItem item) {
         return item.getStatus() == LoanItemStatus.PENDING
                 ? BookCopyStatus.RESERVED
@@ -254,8 +322,24 @@ public class BookCopyService {
                 .bookTitle(book != null ? book.getTitle() : null)
                 .barcode(copy.getBarcode())
                 .status(copy.getStatus())
-                .condition(copy.getCondition())
+                .condition(conditionForResponse(copy.getStatus(), copy.getCondition()))
                 .createdAt(copy.getCreatedAt())
                 .build();
+    }
+
+    private BookCopyCondition conditionForResponse(BookCopyStatus status, BookCopyCondition condition) {
+        BookCopyCondition expectedCondition = conditionForStatus(status);
+        if ((status == BookCopyStatus.DAMAGED || status == BookCopyStatus.LOST)
+                && (condition == null || condition == BookCopyCondition.GOOD)) {
+            return expectedCondition;
+        }
+        return condition;
+    }
+
+    private record CopyRequestState(
+            BookCopyStatus status,
+            boolean statusProvided,
+            BookCopyCondition condition,
+            boolean conditionProvided) {
     }
 }

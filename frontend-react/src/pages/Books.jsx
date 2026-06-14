@@ -86,6 +86,8 @@ function renderBookStatusTag(status, stockAvailable) {
 
 const COPY_STATUS_OPTIONS = [
   { label: "AVAILABLE", value: "AVAILABLE" },
+  { label: "RESERVED", value: "RESERVED", disabled: true },
+  { label: "BORROWED", value: "BORROWED", disabled: true },
   { label: "DAMAGED", value: "DAMAGED" },
   { label: "LOST", value: "LOST" }
 ];
@@ -223,6 +225,26 @@ function BookCopiesPanel({ onStockChanged }) {
   const selectedBook = books.find((book) => book.id === selectedBookId);
   const copyStatusManagedByLoan = ["RESERVED", "BORROWED"].includes(editingCopy?.status);
 
+  function syncCopyConditionByStatus(status) {
+    if (status === "DAMAGED" || status === "LOST") {
+      form.setFieldsValue({ condition: status });
+      return;
+    }
+    if (status === "AVAILABLE") {
+      form.setFieldsValue({ condition: "GOOD" });
+    }
+  }
+
+  function syncCopyStatusByCondition(condition) {
+    if (condition === "DAMAGED" || condition === "LOST") {
+      form.setFieldsValue({ status: condition });
+      return;
+    }
+    if (condition === "GOOD") {
+      form.setFieldsValue({ status: "AVAILABLE" });
+    }
+  }
+
   return (
     <Space direction="vertical" size={16} style={{ width: "100%" }}>
       <Card className="glass-card">
@@ -333,13 +355,18 @@ function BookCopiesPanel({ onStockChanged }) {
           <Form.Item name="status" label="Trạng thái" rules={[{ required: true }]}>
             <Select
               disabled={copyStatusManagedByLoan}
+              onChange={syncCopyConditionByStatus}
               options={copyStatusManagedByLoan
                 ? [{ label: `${editingCopy.status} (theo đơn mượn)`, value: editingCopy.status }]
                 : COPY_STATUS_OPTIONS}
             />
           </Form.Item>
           <Form.Item name="condition" label="Tình trạng" rules={[{ required: true }]}>
-            <Select disabled={copyStatusManagedByLoan} options={COPY_CONDITION_OPTIONS} />
+            <Select
+              disabled={copyStatusManagedByLoan}
+              onChange={syncCopyStatusByCondition}
+              options={COPY_CONDITION_OPTIONS}
+            />
           </Form.Item>
         </Form>
       </Modal>

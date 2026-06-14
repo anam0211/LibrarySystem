@@ -84,7 +84,7 @@ export default function Plans({ session, onLogout }) {
                       size="large" 
                       block 
                       disabled={isCurrentPlan}
-                      style={isCurrentPlan ? { fontWeight: 'bold' } : { background: 'gold', borderColor: 'gold', color: 'black', fontWeight: 'bold' }} 
+                      style={isCurrentPlan ? { fontWeight: 'bold' } : { background: 'gold', borderColor: 'gold', color: 'black', fontWeight: 'bold' }}
                       onClick={() => navigate(session ? "/reader/card" : "/login", { state: { from: { pathname: "/reader/card" }, autoOpenSubscription: !hasMembership, selectedPlanId: pkg.id } })}
                     >
                       {isCurrentPlan ? "Đã đăng ký" : "Đăng ký ngay"}

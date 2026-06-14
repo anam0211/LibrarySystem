@@ -73,3 +73,20 @@ export function toAbsoluteMediaUrl(path) {
     return path;
   }
 }
+
+export function isProtectedKycMediaUrl(path) {
+  if (!path) {
+    return false;
+  }
+
+  try {
+    return new URL(toAbsoluteMediaUrl(path)).pathname.includes("/api/media/files/kyc-");
+  } catch {
+    return String(path).includes("/api/media/files/kyc-");
+  }
+}
+
+export async function loadProtectedMediaObjectUrl(path) {
+  const blob = await apiClient.get(toAbsoluteMediaUrl(path), { responseType: "blob" });
+  return URL.createObjectURL(blob);
+}

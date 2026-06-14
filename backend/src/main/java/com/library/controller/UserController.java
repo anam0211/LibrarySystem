@@ -1,5 +1,6 @@
 package com.library.controller;
 
+import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -153,6 +154,7 @@ public class UserController {
             Membership membership = membershipRepository.findById(membershipId)
                     .orElseThrow(() -> new RuntimeException("Khong tim thay goi hoi vien!"));
             user.setMembership(membership);
+            user.setPremiumValidUntil(LocalDate.now().plusDays(membershipProperties.getSubscriptionDays()));
         }
 
         userRepository.save(user);

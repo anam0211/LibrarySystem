@@ -43,7 +43,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { normalizeSession, writeSession } from "../api/authStore";
-import { toAbsoluteMediaUrl, apiClient } from "../api/apiClient";
+import { isProtectedKycMediaUrl, loadProtectedMediaObjectUrl, toAbsoluteMediaUrl, apiClient } from "../api/apiClient";
 import { libraryApi } from "../api/libraryApi";
 import { libraryGateway } from "../api/libraryGateway";
 import BookCard from "../components/BookCard";
@@ -281,6 +281,7 @@ export default function Reader({ session }) {
   const { returningLoanId, handleRequestReturn } = useReaderReturnAction(loadReader, () => setSelectedLoan(null));
   const unpaidAmount = fines.filter((fine) => fine.status === "UNPAID").reduce((sum, fine) => sum + fine.amount, 0);
   const activeLoans = loans.filter((loan) => !["RETURNED", "CANCELLED"].includes(loan.status));
+  const isKycVerified = user?.kycStatus === "VERIFIED";
   const cardCode = user?.cardCode || "Chưa cấp thẻ";
 
   return (
@@ -325,10 +326,17 @@ export default function Reader({ session }) {
         </Card>
         <Card className="glass-card reader-mini-card" title="Thẻ thư viện" style={user?.membershipCode && user?.membershipCode !== "FREE" ? { borderColor: "gold" } : {}}>
           <Space>
-            <QRCode value={buildReaderQrToken(user?.id || session?.id, Date.now())} size={92} bordered={false} color={user?.membershipCode && user?.membershipCode !== "FREE" ? "gold" : "#000"} />
+            {isKycVerified ? (
+              <QRCode value={buildReaderQrToken(user?.id || session?.id, Date.now())} size={92} bordered={false} color={user?.membershipCode && user?.membershipCode !== "FREE" ? "gold" : "#000"} />
+            ) : (
+              <div style={{ width: 92, height: 92, display: "grid", placeItems: "center", border: "1px solid #d9d9d9", borderRadius: 8 }}>
+                <LockOutlined style={{ fontSize: 28, color: "#8c8c8c" }} />
+              </div>
+            )}
             <div>
               <Typography.Text type="secondary" style={user?.membershipCode && user?.membershipCode !== "FREE" ? { color: "gold" } : {}}>BOOKHUB CARD</Typography.Text>
               <Typography.Title level={4} style={{ margin: "4px 0" }}>{cardCode}</Typography.Title>
+              {!isKycVerified ? <Typography.Text type="secondary" style={{ display: "block", marginBottom: 8 }}>Hoàn tất KYC để mở thẻ QR</Typography.Text> : null}
               <Link to="/reader/card"><Button size="small">Xem thẻ</Button></Link>
             </div>
           </Space>
@@ -927,8 +935,11 @@ export function ReaderCard({ session, onSessionUpdate }) {
   const [loadingPackages, setLoadingPackages] = useState(false);
   const [hasHigherTier, setHasHigherTier] = useState(true);
   const [qrIssuedAt, setQrIssuedAt] = useState(() => Date.now());
+  const [kycDocumentPreviewUrl, setKycDocumentPreviewUrl] = useState("");
+  const [kycDocumentLoading, setKycDocumentLoading] = useState(false);
   const cardCode = user?.cardCode || "Chưa cấp thẻ";
   const readerUserId = user?.id || session?.id;
+  const isKycVerified = user?.kycStatus === "VERIFIED";
   const canEditKyc = user?.canEdit !== false && user?.kycStatus !== "VERIFIED";
   const hasExistingKycDocument = Boolean(user?.idCardImageUrl);
   const submitButtonLabel = hasExistingKycDocument || user?.kycStatus === "PENDING" ? "Cập nhật KYC" : "Gửi hồ sơ xác thực";
@@ -957,10 +968,61 @@ export function ReaderCard({ session, onSessionUpdate }) {
   }, [user?.membershipCode]);
 
   useEffect(() => {
+    if (!isKycVerified) {
+      return undefined;
+    }
+
     setQrIssuedAt(Date.now());
     const timer = window.setInterval(() => setQrIssuedAt(Date.now()), READER_QR_TTL_MS);
     return () => window.clearInterval(timer);
-  }, [session?.id]);
+  }, [isKycVerified, session?.id]);
+
+  useEffect(() => {
+    const documentUrl = user?.idCardImageUrl;
+    if (!documentUrl) {
+      setKycDocumentPreviewUrl("");
+      setKycDocumentLoading(false);
+      return undefined;
+    }
+
+    if (!isProtectedKycMediaUrl(documentUrl)) {
+      setKycDocumentPreviewUrl(toAbsoluteMediaUrl(documentUrl));
+      setKycDocumentLoading(false);
+      return undefined;
+    }
+
+    let active = true;
+    let objectUrl = "";
+    setKycDocumentPreviewUrl("");
+    setKycDocumentLoading(true);
+
+    loadProtectedMediaObjectUrl(documentUrl)
+      .then((nextUrl) => {
+        objectUrl = nextUrl;
+        if (active) {
+          setKycDocumentPreviewUrl(nextUrl);
+        } else {
+          URL.revokeObjectURL(nextUrl);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          message.error("Không thể tải ảnh KYC.");
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setKycDocumentLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [user?.idCardImageUrl]);
 
   useEffect(() => {
     if (user && location.state?.autoOpenSubscription && !autoOpened) {
@@ -1116,14 +1178,20 @@ export function ReaderCard({ session, onSessionUpdate }) {
               <Space align="center" style={{ justifyContent: "space-between", width: "100%" }}>
                 <div>
                   <Typography.Text type="secondary" style={user?.membershipCode && user?.membershipCode !== "FREE" ? { color: "gold" } : {}}>BOOKHUB CARD</Typography.Text>
-                  <Typography.Title level={3} style={{ margin: 0, color: user?.membershipCode && user?.membershipCode !== "FREE" ? "white" : "inherit" }}>{cardCode}</Typography.Title>
+                  <Typography.Title level={3} style={{ margin: 0, color: user?.membershipCode && user?.membershipCode !== "FREE" ? "white" : "inherit" }}>{isKycVerified ? cardCode : "Chưa cấp thẻ"}</Typography.Title>
                 </div>
                 {user?.membershipCode && user?.membershipCode !== "FREE" ? <Tag color="gold" style={{ textTransform: 'uppercase' }}>{user?.membershipName || user?.membershipCode}</Tag> : kycTag(user?.kycStatus)}
               </Space>
-              <div style={{ background: user?.membershipCode && user?.membershipCode !== "FREE" ? "rgba(255,255,255,0.1)" : "transparent", padding: 8, borderRadius: 8, display: "inline-block" }}>
-                <QRCode value={buildReaderQrToken(readerUserId, qrIssuedAt)} size={128} bordered={false} color={user?.membershipCode && user?.membershipCode !== "FREE" ? "gold" : "#000"} bgColor="transparent" />
-              </div>
-              <Typography.Text type="secondary" style={user?.membershipCode && user?.membershipCode !== "FREE" ? { color: "#ccc" } : {}}>Làm mới lúc {formatQrTime(qrIssuedAt + READER_QR_TTL_MS)}</Typography.Text>
+              {isKycVerified ? (
+                <>
+                  <div style={{ background: user?.membershipCode && user?.membershipCode !== "FREE" ? "rgba(255,255,255,0.1)" : "transparent", padding: 8, borderRadius: 8, display: "inline-block" }}>
+                    <QRCode value={buildReaderQrToken(readerUserId, qrIssuedAt)} size={128} bordered={false} color={user?.membershipCode && user?.membershipCode !== "FREE" ? "gold" : "#000"} bgColor="transparent" />
+                  </div>
+                  <Typography.Text type="secondary" style={user?.membershipCode && user?.membershipCode !== "FREE" ? { color: "#ccc" } : {}}>Làm mới lúc {formatQrTime(qrIssuedAt + READER_QR_TTL_MS)}</Typography.Text>
+                </>
+              ) : (
+                <Alert type="warning" showIcon message="Vui lòng hoàn tất KYC để được cấp thẻ QR thư viện." />
+              )}
             </Space>
           </Card>
         </Col>
@@ -1171,7 +1239,17 @@ export function ReaderCard({ session, onSessionUpdate }) {
                       <Upload accept=".jpg,.jpeg,.png,.webp" beforeUpload={() => false} disabled={!canEditKyc} fileList={kycFileList} maxCount={1} onChange={({ fileList }) => setKycFileList(fileList.slice(-1))}>
                         <Button disabled={!canEditKyc} icon={<UploadOutlined />}>Chọn ảnh</Button>
                       </Upload>
-                      {user?.idCardImageUrl ? <Button type="link" href={toAbsoluteMediaUrl(user.idCardImageUrl)} target="_blank" style={{ paddingInline: 0 }}>Xem ảnh đã lưu</Button> : null}
+                      {user?.idCardImageUrl ? (
+                        <Button
+                          type="link"
+                          href={kycDocumentPreviewUrl}
+                          target="_blank"
+                          disabled={!kycDocumentPreviewUrl || kycDocumentLoading}
+                          style={{ paddingInline: 0 }}
+                        >
+                          {kycDocumentLoading ? "Đang tải ảnh..." : "Xem ảnh đã lưu"}
+                        </Button>
+                      ) : null}
                     </Form.Item>
                   </Col>
                 </Row>

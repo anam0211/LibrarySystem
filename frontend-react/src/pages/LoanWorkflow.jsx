@@ -767,7 +767,7 @@ function DeliveryPage() {
       <PageHeader
         eyebrow="Điều phối giao sách"
         title="Giao tận nhà"
-        description="Quản lý theo đơn mượn, lọc nhanh bằng trạng thái và tra cứu khi số lượng đơn lớn."
+        description="Quản lý theo đơn mượn, lọc nhanh bằng trạng thái và tra cứu."
         extra={
           <Space>
             <HomeOutlined />
@@ -907,7 +907,7 @@ function PickupPage() {
       <PageHeader
         eyebrow="Điều phối đơn mượn"
         title="Đến lấy tại quầy"
-        description="Quản lý đơn mượn tại quầy theo bảng để dễ tra cứu khi số lượng đơn tăng."
+        description="Quản lý đơn mượn tại quầy"
         extra={<Tag color="blue">{pickupOrders.length} đơn</Tag>}
       />
 

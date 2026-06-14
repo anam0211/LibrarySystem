@@ -98,6 +98,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/fines").hasRole("LIBRARIAN")
                         .requestMatchers(HttpMethod.GET, "/api/circulation/recent").hasAnyRole("ADMIN", "LIBRARIAN")
                         .requestMatchers(HttpMethod.GET, "/api/books/*/reviews/me").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/media/files/kyc-*").authenticated()
                         .requestMatchers(HttpMethod.GET,
                                 "/api/books",
                                 "/api/books/**",

@@ -201,6 +201,15 @@ export default function Users() {
             )
           },
             {
+              title: "Hạn hội viên",
+              dataIndex: "premiumValidUntil",
+              render: (value, record) => (
+                record.membershipCode && record.membershipCode !== "FREE"
+                  ? <Typography.Text>{formatDate(value)}</Typography.Text>
+                  : <Typography.Text type="secondary">-</Typography.Text>
+              )
+            },
+            {
               title: "Tạo lúc",
               dataIndex: "createdAt",
               render: formatDate
@@ -315,6 +324,9 @@ export default function Users() {
               placeholder="Chọn gói hội viên"
             />
           </Form.Item>
+          <Typography.Text type="secondary">
+            Hạn hội viên hiện tại: <strong>{formatDate(editingUser?.premiumValidUntil)}</strong>
+          </Typography.Text>
         </Form>
       </Modal>
     </div>

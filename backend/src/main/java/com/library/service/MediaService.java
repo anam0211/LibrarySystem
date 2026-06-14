@@ -5,6 +5,8 @@ import com.library.common.exception.AppException;
 import com.library.exception.MediaErrorCode;
 import com.library.entity.Book;
 import com.library.entity.BookImage;
+import com.library.entity.Role;
+import com.library.entity.User;
 import com.library.repository.BookImageRepository;
 import com.library.repository.BookRepository;
 import com.library.dto.response.MediaAssetResponseDTO;
@@ -14,9 +16,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
 import java.net.MalformedURLException;
@@ -41,6 +45,7 @@ public class MediaService {
     BookRepository bookRepository;
     BookImageRepository bookImageRepository;
     MediaStorageProperties mediaStorageProperties;
+    CurrentUserService currentUserService;
 
     public List<MediaAssetResponseDTO> getAll() {
         return bookImageRepository.findAll()
@@ -140,6 +145,10 @@ public class MediaService {
     }
 
     public Resource loadFile(String fileName) {
+        if (isKycFile(fileName)) {
+            assertCanViewKycFile(fileName);
+        }
+
         try {
             Path filePath = resolveStorageDirectory().resolve(fileName).normalize();
             Resource resource = new UrlResource(filePath.toUri());
@@ -152,6 +161,25 @@ public class MediaService {
         } catch (MalformedURLException exception) {
             throw new AppException(MediaErrorCode.FILE_NOT_FOUND);
         }
+    }
+
+    private boolean isKycFile(String fileName) {
+        return fileName != null && fileName.startsWith("kyc-");
+    }
+
+    private void assertCanViewKycFile(String fileName) {
+        User currentUser = currentUserService.getCurrentUser();
+        Role role = currentUser.getRole();
+        if (role == Role.ADMIN || role == Role.LIBRARIAN) {
+            return;
+        }
+
+        String ownKycFileName = extractStoredName(currentUser.getIdCardImageUrl());
+        if (fileName.equals(ownKycFileName)) {
+            return;
+        }
+
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Khong co quyen xem anh KYC.");
     }
 
     private Path resolveStorageDirectory() {

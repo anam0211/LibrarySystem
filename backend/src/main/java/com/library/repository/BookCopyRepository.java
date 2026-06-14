@@ -1,6 +1,7 @@
 package com.library.repository;
 
 import com.library.entity.BookCopy;
+import com.library.entity.BookCopyCondition;
 import com.library.entity.BookCopyStatus;
 import jakarta.persistence.LockModeType;
 import java.util.List;
@@ -15,7 +16,10 @@ import org.springframework.stereotype.Repository;
 public interface BookCopyRepository extends JpaRepository<BookCopy, Integer> {
     long countByBook_Id(Integer bookId);
 
-    long countByBook_IdAndStatus(Integer bookId, BookCopyStatus status);
+    long countByBook_IdAndStatusAndCondition(
+            Integer bookId,
+            BookCopyStatus status,
+            BookCopyCondition condition);
 
     boolean existsByBarcode(String barcode);
 
@@ -28,8 +32,16 @@ public interface BookCopyRepository extends JpaRepository<BookCopy, Integer> {
      * Đảm bảo chỉ một transaction có thể đặt chỗ bản sao này cùng lúc.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT c FROM BookCopy c WHERE c.book.id = :bookId AND c.status = :status ORDER BY c.createdAt ASC")
+    @Query("""
+            SELECT c
+            FROM BookCopy c
+            WHERE c.book.id = :bookId
+              AND c.status = :status
+              AND c.condition = :condition
+            ORDER BY c.createdAt ASC
+            """)
     List<BookCopy> findAvailableForUpdate(
             @Param("bookId") Integer bookId,
-            @Param("status") BookCopyStatus status);
+            @Param("status") BookCopyStatus status,
+            @Param("condition") BookCopyCondition condition);
 }

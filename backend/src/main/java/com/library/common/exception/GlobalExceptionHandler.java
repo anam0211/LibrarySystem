@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.server.ResponseStatusException;
 
 @ControllerAdvice
 public class GlobalExceptionHandler {
@@ -30,6 +31,14 @@ public class GlobalExceptionHandler {
                 .build();
 
         return ResponseEntity.badRequest().body(response);
+    }
+
+    @ExceptionHandler(value = ResponseStatusException.class)
+    public ResponseEntity<ApiResponse<Void>> handleResponseStatus(ResponseStatusException exception) {
+        ApiResponse<Void> apiResponse = new ApiResponse<>();
+        apiResponse.setCode(exception.getStatusCode().value());
+        apiResponse.setMessage(exception.getReason());
+        return ResponseEntity.status(exception.getStatusCode()).body(apiResponse);
     }
 
     @ExceptionHandler(value = AppException.class)

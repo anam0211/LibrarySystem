@@ -8,7 +8,7 @@ import {
 } from "@ant-design/icons";
 import { Button, Card, Descriptions, Image, Modal, Segmented, Space, Table, Tag, Typography, message, notification } from "antd";
 import { useEffect, useMemo, useState } from "react";
-import { toAbsoluteMediaUrl } from "../api/apiClient";
+import { isProtectedKycMediaUrl, loadProtectedMediaObjectUrl, toAbsoluteMediaUrl } from "../api/apiClient";
 import { libraryGateway } from "../api/libraryGateway";
 import PageHeader from "../components/PageHeader";
 import { formatDateTime } from "../components/formatters";
@@ -45,6 +45,8 @@ export default function AdminKyc() {
   const [selected, setSelected] = useState(null);
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [loading, setLoading] = useState(true);
+  const [kycDocumentPreviewUrl, setKycDocumentPreviewUrl] = useState("");
+  const [kycDocumentLoading, setKycDocumentLoading] = useState(false);
   const [notifyApi, notifyContextHolder] = notification.useNotification();
 
   async function refresh() {
@@ -67,6 +69,53 @@ export default function AdminKyc() {
   useEffect(() => {
     refresh();
   }, []);
+
+  useEffect(() => {
+    const documentUrl = getKycDocumentUrl(selected);
+    if (!documentUrl) {
+      setKycDocumentPreviewUrl("");
+      setKycDocumentLoading(false);
+      return undefined;
+    }
+
+    if (!isProtectedKycMediaUrl(documentUrl)) {
+      setKycDocumentPreviewUrl(toAbsoluteMediaUrl(documentUrl));
+      setKycDocumentLoading(false);
+      return undefined;
+    }
+
+    let active = true;
+    let objectUrl = "";
+    setKycDocumentPreviewUrl("");
+    setKycDocumentLoading(true);
+
+    loadProtectedMediaObjectUrl(documentUrl)
+      .then((nextUrl) => {
+        objectUrl = nextUrl;
+        if (active) {
+          setKycDocumentPreviewUrl(nextUrl);
+        } else {
+          URL.revokeObjectURL(nextUrl);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          message.error("Không thể tải ảnh KYC.");
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setKycDocumentLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [selected]);
 
   const filteredUsers = useMemo(() => {
     if (statusFilter === "ALL") {
@@ -255,9 +304,10 @@ export default function AdminKyc() {
                   <Button
                     type="link"
                     icon={<LinkOutlined />}
-                    href={toAbsoluteMediaUrl(getKycDocumentUrl(selected))}
+                    href={kycDocumentPreviewUrl}
                     target="_blank"
                     rel="noreferrer"
+                    disabled={!kycDocumentPreviewUrl || kycDocumentLoading}
                     style={{ paddingInline: 0 }}
                   >
                     Mở ảnh tĩnh
@@ -268,8 +318,9 @@ export default function AdminKyc() {
 
             {getKycDocumentUrl(selected) ? (
               <Image
-                src={toAbsoluteMediaUrl(getKycDocumentUrl(selected))}
+                src={kycDocumentPreviewUrl}
                 alt="Ảnh CCCD / thẻ sinh viên"
+                placeholder={kycDocumentLoading ? "Đang tải ảnh KYC..." : null}
                 style={{ maxHeight: 360, objectFit: "contain", borderRadius: 12 }}
               />
             ) : null}

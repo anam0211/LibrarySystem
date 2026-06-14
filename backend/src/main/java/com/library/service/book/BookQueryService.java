@@ -1,5 +1,4 @@
 package com.library.service.book;
-
 import com.library.common.exception.AppException;
 import com.library.common.response.PagedResult;
 import com.library.dto.response.BookResponseDTO;
@@ -12,13 +11,13 @@ import com.library.exception.BookErrorCode;
 import com.library.mapper.BookResponseMapper;
 import com.library.repository.BookRepository;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.function.ToDoubleFunction;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -90,12 +89,21 @@ public class BookQueryService {
 
         return result;
     }
-
+    
     public List<BookResponseDTO> getFeaturedBooks(int limit) {
         List<Book> books = new ArrayList<>(bookRepository.findAll());
-        books.sort(Comparator
-                .comparing(Book::getStockAvailable, Comparator.nullsLast(Comparator.reverseOrder()))
-                .thenComparing(Book::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())));
+
+        Collections.sort(books, new Comparator<Book>() {
+            @Override
+            public int compare(Book b1, Book b2) {
+                int stockCompare = compareIntegerDesc(b1.getStockAvailable(), b2.getStockAvailable());
+                if (stockCompare != 0) {
+                    return stockCompare;
+                }
+
+                return compareCreatedAtDesc(b1, b2);
+            }
+        });
 
         List<BookResponseDTO> result = new ArrayList<>();
         for (Book book : books) {
@@ -116,9 +124,9 @@ public class BookQueryService {
         List<BookResponseDTO> books = getAllActiveBookResponses();
 
         Map<String, List<BookResponseDTO>> result = new LinkedHashMap<>();
-        result.put("borrowed", topBooks(books, book -> borrowCount(book), safeLimit));
-        result.put("rated", topBooks(books, book -> ratingScore(book), safeLimit));
-        result.put("favorite", topBooks(books, book -> favoriteCount(book), safeLimit));
+        result.put("borrowed", topBooksByBorrowCount(books, safeLimit));
+        result.put("rated", topBooksByRating(books, safeLimit));
+        result.put("favorite", topBooksByFavoriteCount(books, safeLimit));
         return result;
     }
 
@@ -128,7 +136,15 @@ public class BookQueryService {
     }
 
     private List<BookResponseDTO> getAllActiveBookResponses() {
-        List<Book> books = bookRepository.findAll(Sort.by(Sort.Direction.DESC, "createdAt"));
+        List<Book> books = new ArrayList<>(bookRepository.findAll());
+
+        Collections.sort(books, new Comparator<Book>() {
+            @Override
+            public int compare(Book b1, Book b2) {
+                return compareCreatedAtDesc(b1, b2);
+            }
+        });
+
         List<Book> activeBooks = new ArrayList<>();
 
         for (Book book : books) {
@@ -155,19 +171,138 @@ public class BookQueryService {
 
         return result;
     }
+    private List<BookResponseDTO> topBooksByBorrowCount(List<BookResponseDTO> books, int limit) {
+        List<BookResponseDTO> result = new ArrayList<>();
 
-    private List<BookResponseDTO> topBooks(
-            List<BookResponseDTO> books,
-            ToDoubleFunction<BookResponseDTO> score,
-            int limit) {
-        return books.stream()
-                .filter(book -> score.applyAsDouble(book) > 0)
-                .sorted(Comparator
-                        .comparingDouble(score)
-                        .reversed()
-                        .thenComparing(BookResponseDTO::getTitle, Comparator.nullsLast(String::compareToIgnoreCase)))
-                .limit(limit)
-                .toList();
+        for (BookResponseDTO book : books) {
+            if (borrowCount(book) > 0) {
+                result.add(book);
+            }
+        }
+
+        Collections.sort(result, new Comparator<BookResponseDTO>() {
+            @Override
+            public int compare(BookResponseDTO b1, BookResponseDTO b2) {
+                int scoreCompare = Double.compare(borrowCount(b2), borrowCount(b1));
+                if (scoreCompare != 0) {
+                    return scoreCompare;
+                }
+
+                return compareTitleAsc(b1.getTitle(), b2.getTitle());
+            }
+        });
+
+        return limitBookResponses(result, limit);
+    }
+
+    private List<BookResponseDTO> topBooksByRating(List<BookResponseDTO> books, int limit) {
+        List<BookResponseDTO> result = new ArrayList<>();
+
+        for (BookResponseDTO book : books) {
+            if (ratingScore(book) > 0) {
+                result.add(book);
+            }
+        }
+
+        Collections.sort(result, new Comparator<BookResponseDTO>() {
+            @Override
+            public int compare(BookResponseDTO b1, BookResponseDTO b2) {
+                int scoreCompare = Double.compare(ratingScore(b2), ratingScore(b1));
+                if (scoreCompare != 0) {
+                    return scoreCompare;
+                }
+
+                return compareTitleAsc(b1.getTitle(), b2.getTitle());
+            }
+        });
+
+        return limitBookResponses(result, limit);
+    }
+
+    private List<BookResponseDTO> topBooksByFavoriteCount(List<BookResponseDTO> books, int limit) {
+        List<BookResponseDTO> result = new ArrayList<>();
+
+        for (BookResponseDTO book : books) {
+            if (favoriteCount(book) > 0) {
+                result.add(book);
+            }
+        }
+
+        Collections.sort(result, new Comparator<BookResponseDTO>() {
+            @Override
+            public int compare(BookResponseDTO b1, BookResponseDTO b2) {
+                int scoreCompare = Double.compare(favoriteCount(b2), favoriteCount(b1));
+                if (scoreCompare != 0) {
+                    return scoreCompare;
+                }
+
+                return compareTitleAsc(b1.getTitle(), b2.getTitle());
+            }
+        });
+
+        return limitBookResponses(result, limit);
+    }
+
+    private List<BookResponseDTO> limitBookResponses(List<BookResponseDTO> books, int limit) {
+        List<BookResponseDTO> result = new ArrayList<>();
+
+        for (BookResponseDTO book : books) {
+            if (result.size() >= limit) {
+                break;
+            }
+
+            result.add(book);
+        }
+
+        return result;
+    }
+
+    private int compareIntegerDesc(Integer value1, Integer value2) {
+        if (value1 == null && value2 == null) {
+            return 0;
+        }
+
+        if (value1 == null) {
+            return 1;
+        }
+
+        if (value2 == null) {
+            return -1;
+        }
+
+        return Integer.compare(value2, value1);
+    }
+
+    private int compareCreatedAtDesc(Book b1, Book b2) {
+        if (b1.getCreatedAt() == null && b2.getCreatedAt() == null) {
+            return 0;
+        }
+
+        if (b1.getCreatedAt() == null) {
+            return 1;
+        }
+
+        if (b2.getCreatedAt() == null) {
+            return -1;
+        }
+
+        return b2.getCreatedAt().compareTo(b1.getCreatedAt());
+    }
+
+    private int compareTitleAsc(String title1, String title2) {
+        if (title1 == null && title2 == null) {
+            return 0;
+        }
+
+        if (title1 == null) {
+            return 1;
+        }
+
+        if (title2 == null) {
+            return -1;
+        }
+
+        return title1.compareToIgnoreCase(title2);
     }
 
     private double borrowCount(BookResponseDTO book) {

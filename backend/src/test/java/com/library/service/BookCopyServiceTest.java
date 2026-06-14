@@ -2,12 +2,14 @@ package com.library.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.library.common.exception.BadRequestException;
 import com.library.dto.request.BookCopyRequestDTO;
+import com.library.dto.response.BookCopyResponseDTO;
 import com.library.entity.Book;
 import com.library.entity.BookCopy;
 import com.library.entity.BookCopyCondition;
@@ -47,7 +49,11 @@ class BookCopyServiceTest {
         book.setStockAvailable(0);
 
         when(bookCopyRepository.countByBook_Id(10)).thenReturn(5L);
-        when(bookCopyRepository.countByBook_IdAndStatus(10, BookCopyStatus.AVAILABLE)).thenReturn(3L);
+        when(bookCopyRepository.countByBook_IdAndStatusAndCondition(
+                10,
+                BookCopyStatus.AVAILABLE,
+                BookCopyCondition.GOOD))
+                .thenReturn(3L);
 
         bookCopyService.syncBookStock(book);
 
@@ -93,5 +99,48 @@ class BookCopyServiceTest {
 
         assertThrows(BadRequestException.class, () -> bookCopyService.updateCopy(12, request));
         verify(bookCopyRepository, never()).save(copy);
+    }
+
+    @Test
+    void markReturnedDamagedSetsStatusDamagedAndStoresCondition() {
+        Book book = new Book();
+        book.setId(13);
+
+        BookCopy copy = new BookCopy();
+        copy.setId(14);
+        copy.setBook(book);
+        copy.setStatus(BookCopyStatus.BORROWED);
+        copy.setCondition(BookCopyCondition.GOOD);
+
+        when(bookCopyRepository.countByBook_Id(13)).thenReturn(1L);
+
+        bookCopyService.markReturned(copy, BookCopyCondition.DAMAGED);
+
+        assertEquals(BookCopyStatus.DAMAGED, copy.getStatus());
+        assertEquals(BookCopyCondition.DAMAGED, copy.getCondition());
+        verify(bookCopyRepository).save(copy);
+        verify(bookCopyRepository).countByBook_IdAndStatusAndCondition(
+                13,
+                BookCopyStatus.AVAILABLE,
+                BookCopyCondition.GOOD);
+    }
+
+    @Test
+    void createCopyKeepsDamagedStatusAndStoresMatchingCondition() {
+        Book book = new Book();
+        book.setId(15);
+
+        BookCopyRequestDTO request = new BookCopyRequestDTO();
+        request.setBarcode("BC-015");
+        request.setStatus(BookCopyStatus.DAMAGED);
+        request.setCondition(BookCopyCondition.GOOD);
+
+        when(bookRepository.findById(15)).thenReturn(Optional.of(book));
+        when(bookCopyRepository.save(any(BookCopy.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        BookCopyResponseDTO response = bookCopyService.createCopy(15, request);
+
+        assertEquals(BookCopyStatus.DAMAGED, response.getStatus());
+        assertEquals(BookCopyCondition.DAMAGED, response.getCondition());
     }
 }
